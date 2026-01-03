@@ -11,17 +11,36 @@ const firebaseConfig = {
     appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
+// Validate configuration
+const isConfigValid = !!firebaseConfig.apiKey && !!firebaseConfig.projectId;
+
 import { getAnalytics, isSupported } from "firebase/analytics";
 
-// Initialize Firebase
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const auth = getAuth(app);
-const db = getFirestore(app);
+// Initialize Firebase only if config is valid to prevent build-time crashes (e.g. on Vercel/Firebase build workers)
+let app: any;
+let auth: any;
+let db: any;
+
+try {
+    if (isConfigValid) {
+        app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+        auth = getAuth(app);
+        db = getFirestore(app);
+    } else {
+        console.warn("Firebase configuration is missing or invalid. Check your environment variables.");
+        // Export placeholders for build time
+        app = {} as any;
+        auth = {} as any;
+        db = {} as any;
+    }
+} catch (error) {
+    console.error("Firebase initialization failed:", error);
+}
 
 let analytics;
-if (typeof window !== "undefined") {
+if (typeof window !== "undefined" && isConfigValid) {
     isSupported().then((supported) => {
-        if (supported) {
+        if (supported && app) {
             analytics = getAnalytics(app);
         }
     });
