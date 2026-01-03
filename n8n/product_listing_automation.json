@@ -1,0 +1,160 @@
+{
+    "name": "Product Listing Automation",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "publish-product",
+                "options": {}
+            },
+            "name": "Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "dataType": "string",
+                "value1": "={{$json[\"body\"][\"marketplace\"]}}",
+                "rules": {
+                    "rules": [
+                        {
+                            "value2": "amazon"
+                        },
+                        {
+                            "value2": "bestbuy",
+                            "output": 1
+                        }
+                    ]
+                }
+            },
+            "name": "Switch Marketplace",
+            "type": "n8n-nodes-base.switch",
+            "typeVersion": 1,
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "url": "https://sellingpartnerapi-na.amazon.com/listings/2021-08-01/items/{{$json[\"body\"][\"sku\"]}}",
+                "method": "PUT",
+                "authentication": "genericCredentialType",
+                "genericAuthType": "httpHeaderAuth",
+                "jsonParameters": true,
+                "options": {},
+                "bodyParametersUi": {
+                    "parameter": [
+                        {
+                            "name": "attributes",
+                            "value": "={{$json[\"body\"][\"productAttributes\"]}}"
+                        }
+                    ]
+                }
+            },
+            "name": "Amazon SP-API",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 1,
+            "position": [
+                700,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "url": "https://api.bestbuy.com/v1/products",
+                "method": "POST",
+                "authentication": "headerAuth",
+                "jsonParameters": true,
+                "options": {},
+                "bodyParametersUi": {
+                    "parameter": [
+                        {
+                            "name": "product",
+                            "value": "={{$json[\"body\"]}}"
+                        }
+                    ]
+                }
+            },
+            "name": "Best Buy API",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 1,
+            "position": [
+                700,
+                400
+            ]
+        },
+        {
+            "parameters": {
+                "operation": "update",
+                "collection": "products",
+                "documentId": "={{$json[\"body\"][\"productId\"]}}",
+                "fieldsUi": {
+                    "field": [
+                        {
+                            "key": "marketplace.amazon.status",
+                            "value": "LIVE"
+                        },
+                        {
+                            "key": "marketplace.amazon.lastSynced",
+                            "value": "={{new Date().toISOString()}}"
+                        }
+                    ]
+                }
+            },
+            "name": "Update Firestore Amazon",
+            "type": "n8n-nodes-base.firestore",
+            "typeVersion": 1,
+            "position": [
+                950,
+                200
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Switch Marketplace",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Switch Marketplace": {
+            "main": [
+                [
+                    {
+                        "node": "Amazon SP-API",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Best Buy API",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Amazon SP-API": {
+            "main": [
+                [
+                    {
+                        "node": "Update Firestore Amazon",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    }
+}

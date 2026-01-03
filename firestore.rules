@@ -1,0 +1,37 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAdmin() {
+      return request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Products: Public read, Admin write
+    match /products/{product} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    // Users: Users can read/write their own data
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Orders: Users read own, Admin read all. Create allowed by auth users.
+    match /orders/{orderId} {
+      allow read: if isAdmin() || (request.auth != null && request.auth.uid == resource.data.userId);
+      allow create: if request.auth != null;
+      allow update: if isAdmin(); // Only admin updates status
+    }
+    
+    // Marketplace Metadata
+    match /marketplace_settings/{setting} {
+      allow read, write: if isAdmin();
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
