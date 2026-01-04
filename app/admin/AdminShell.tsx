@@ -41,7 +41,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
                 // Check if user has admin role in Firestore
                 // Note: In a real production app, use Custom Claims for better security
                 try {
-                    const userDoc = await getDoc(doc(db, "users", user.uid));
+                    const userDoc = await getDoc(doc(db, "user", user.uid));
                     console.log("Admin Check - UID:", user.uid);
 
                     if (userDoc.exists()) {

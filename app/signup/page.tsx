@@ -35,7 +35,7 @@ export default function SignupPage() {
             });
 
             // 3. Create User Document in Firestore
-            await setDoc(doc(db, "users", user.uid), {
+            await setDoc(doc(db, "user", user.uid), {
                 uid: user.uid,
                 name: name,
                 email: email,
