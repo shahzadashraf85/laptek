@@ -19,6 +19,7 @@ export default function Header() {
     const [user, setUser] = useState<FirebaseUser | null>(null);
 
     useEffect(() => {
+        if (!auth || !auth.app) return;
         const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
             setUser(currentUser);
         });
