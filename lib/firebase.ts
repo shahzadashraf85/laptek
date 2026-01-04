@@ -27,7 +27,12 @@ try {
         auth = getAuth(app);
         db = getFirestore(app);
     } else {
-        console.warn("Firebase configuration is missing or invalid. Check your environment variables.");
+        if (typeof window !== 'undefined') {
+            console.warn("Firebase configuration is missing or invalid:");
+            console.log("- API Key:", firebaseConfig.apiKey ? "Present" : "MISSING");
+            console.log("- Project ID:", firebaseConfig.projectId ? "Present" : "MISSING");
+            console.log("If you just added these to Vercel, you MUST manually trigger a 'REDEPLOY' for them to take effect.");
+        }
         // Export placeholders for build time
         app = {} as any;
         auth = {} as any;
