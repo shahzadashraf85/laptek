@@ -29,6 +29,13 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
     } = theme.useToken();
 
     useEffect(() => {
+        // Safety check: Don't call onAuthStateChanged if auth is not initialized
+        if (!auth || !auth.app) {
+            console.error("Firebase Auth not initialized. Please check your environment variables.");
+            setLoading(false);
+            return;
+        }
+
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
                 // Check if user has admin role in Firestore

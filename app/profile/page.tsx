@@ -24,6 +24,10 @@ function ProfileContent() {
     const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'orders');
 
     useEffect(() => {
+        if (!auth || !auth.app) {
+            setLoading(false);
+            return;
+        }
         const unsubscribe = onAuthStateChanged(auth, (user) => {
             if (user) {
                 setUser(user);
