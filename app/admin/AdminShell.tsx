@@ -41,7 +41,15 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
                 // Check if user has admin role in Firestore
                 // Note: In a real production app, use Custom Claims for better security
                 try {
-                    const userDoc = await getDoc(doc(db, "user", user.uid));
+                    // Check 'user' (singular) first
+                    let userDoc = await getDoc(doc(db, "user", user.uid));
+
+                    // Fallback to 'users' (plural) if singular doesn't exist
+                    if (!userDoc.exists()) {
+                        console.log("Checking 'users' plural collection...");
+                        userDoc = await getDoc(doc(db, "users", user.uid));
+                    }
+
                     console.log("Admin Check - UID:", user.uid);
 
                     if (userDoc.exists()) {
@@ -54,7 +62,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
                             // Do not redirect, let the UI show the error
                         }
                     } else {
-                        console.warn("User document does not exist in Firestore for UID:", user.uid);
+                        console.warn("User document does not exist in Firestore (checked 'user' and 'users') for UID:", user.uid);
                         // Do not redirect, let the UI show the error
                     }
                 } catch (error) {
