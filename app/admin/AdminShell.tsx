@@ -31,7 +31,64 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
         token: { colorBgContainer, borderRadiusLG },
     } = theme.useToken();
 
-    // ... (useEffect remains same)
+    useEffect(() => {
+        // Safety check: Don't call onAuthStateChanged if auth is not initialized
+        if (!auth || !auth.app) {
+            console.error("Firebase Auth not initialized. Please check your environment variables.");
+            setLoading(false);
+            return;
+        }
+
+        // Add a safety timeout to stop loading if Firebase hangs
+        const timeoutId = setTimeout(() => {
+            if (loading) {
+                console.warn("Auth check timed out after 10 seconds");
+                setLoading(false);
+            }
+        }, 10000);
+
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+            clearTimeout(timeoutId); // Clear timeout if auth responds
+            if (user) {
+                // Check if user has admin role in Firestore
+                try {
+                    // Check 'user' (singular) first
+                    let userDoc = await getDoc(doc(db, "user", user.uid));
+
+                    // Fallback to 'users' (plural) if singular doesn't exist
+                    if (!userDoc.exists()) {
+                        console.log("Checking 'users' plural collection...");
+                        userDoc = await getDoc(doc(db, "users", user.uid));
+                    }
+
+                    console.log("Admin Check - UID:", user.uid);
+
+                    if (userDoc.exists()) {
+                        const userData = userDoc.data();
+                        console.log("Admin Check - Firestore Data:", userData);
+                        if (userData.role === 'admin') {
+                            setAuthorized(true);
+                        } else {
+                            console.warn("User role is NOT admin. Role found:", userData.role);
+                        }
+                    } else {
+                        console.warn("User document does not exist in Firestore for UID:", user.uid);
+                    }
+                } catch (error) {
+                    console.error("Auth check failed", error);
+                }
+            } else {
+                // Not logged in, redirect away silently
+                router.replace('/login');
+            }
+            setLoading(false);
+        });
+
+        return () => {
+            unsubscribe();
+            clearTimeout(timeoutId);
+        };
+    }, [router]);
 
     const handleLogout = async () => {
         await signOut(auth);
@@ -89,19 +146,26 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
     if (loading) {
         return (
-            <div style={{ height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#f0f2f5' }}>
+            <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: '#f0f2f5' }}>
                 <Spin size="large" />
+                <div style={{ marginTop: 24, fontSize: 16, color: '#666' }}>Verifying Administrator Access...</div>
             </div>
         );
     }
 
     if (!authorized) {
         return (
-            <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: '#fff' }}>
-                <h1 style={{ color: 'red', fontSize: 24 }}>Access Denied</h1>
-                <p>You do not have permission to view this page.</p>
-                <p style={{ marginTop: 10, color: '#666' }}>Please check the console (F12) for debugging details.</p>
-                <Button onClick={() => router.push('/')} style={{ marginTop: 20 }}>Go Home</Button>
+            <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' }}>
+                <div style={{ background: '#fff', padding: 40, borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', textAlign: 'center', maxWidth: 400 }}>
+                    <div style={{ fontSize: 48, marginBottom: 16 }}>🚫</div>
+                    <h1 style={{ color: '#ff4d4f', fontSize: 24, marginBottom: 16 }}>Access Denied</h1>
+                    <p style={{ color: '#666', marginBottom: 24 }}>You do not have the required permissions to access the Admin Console.</p>
+                    <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+                        <Button type="primary" onClick={() => router.push('/')}>Go Home</Button>
+                        <Button onClick={() => router.push('/login')}>Login as Admin</Button>
+                    </div>
+                    <p style={{ marginTop: 24, fontSize: 12, color: '#999' }}>If you believe this is an error, please contact support.</p>
+                </div>
             </div>
         );
     }
