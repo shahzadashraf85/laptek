@@ -5,10 +5,15 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import Header from "@/components/store/Header";
+import { AnnouncementBar } from '@/components/store/AnnouncementBar';
 import { HeroCarousel } from '@/components/store/home/HeroCarousel';
 import { CategoryGrid } from '@/components/store/home/CategoryGrid';
 import { InfoBar } from '@/components/store/home/InfoBar';
+import { DealsSection } from '@/components/store/home/DealsSection';
+import { Testimonials } from '@/components/store/home/Testimonials';
+import { StatsSection } from '@/components/store/home/StatsSection';
 import { Newsletter } from '@/components/store/home/Newsletter';
+import { LiveChat } from '@/components/store/LiveChat';
 import { ALL_PRODUCTS } from '@/lib/products';
 import { Card } from '@/components/ui/card';
 
@@ -17,11 +22,14 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
+      <AnnouncementBar />
       <Header />
 
       <HeroCarousel />
 
       <InfoBar />
+
+      <DealsSection />
 
       <CategoryGrid />
 
@@ -71,6 +79,10 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <Testimonials />
+
+      <StatsSection />
 
       {/* Brand Marquee (Static for now) */}
       <section className="py-12 border-y">
@@ -131,6 +143,8 @@ export default function Home() {
           © 2026 LapTek Inc. All rights reserved.
         </div>
       </footer>
+
+      <LiveChat />
     </div>
   );
 }
