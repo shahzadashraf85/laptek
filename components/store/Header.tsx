@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { ShoppingCart, User, LogOut } from 'lucide-react';
+import { CartSheet } from '@/components/store/CartSheet';
+import { User, LogOut } from 'lucide-react';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import {
@@ -84,10 +85,7 @@ export default function Header() {
                         <Button variant="ghost" asChild className="hidden sm:inline-flex">
                             <Link href="/admin">Admin</Link>
                         </Button>
-                        <Button size="icon" variant="ghost">
-                            <ShoppingCart className="h-5 w-5" />
-                            <span className="sr-only">Cart</span>
-                        </Button>
+                        <CartSheet />
                     </nav>
                 </div>
             </div>
