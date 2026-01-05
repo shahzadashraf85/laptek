@@ -12,7 +12,9 @@ import {
     SettingOutlined,
     LogoutOutlined,
     TagOutlined,
-    MessageOutlined
+    MessageOutlined,
+    FileTextOutlined,
+    BankOutlined
 } from '@ant-design/icons';
 import { usePathname, useRouter } from 'next/navigation';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -110,6 +112,16 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
             key: '/admin/orders',
             icon: <AppstoreOutlined />,
             label: 'Orders',
+        },
+        {
+            key: '/admin/invoices',
+            icon: <FileTextOutlined />,
+            label: 'Invoices',
+        },
+        {
+            key: '/admin/accounts',
+            icon: <BankOutlined />,
+            label: 'Accounts',
         },
         {
             key: '/admin/users',
