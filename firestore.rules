@@ -1,45 +1,201 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper functions
-    // Helper functions
+    
+    // ============================================
+    // HELPER FUNCTIONS
+    // ============================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
     function isAdmin() {
-      // Check both collections just in case
-      return request.auth != null && (
-        get(/databases/$(database)/documents/user/$(request.auth.uid)).data.role == 'admin' ||
+      return isAuthenticated() && (
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
       );
     }
     
-    // Products: Public read, Admin write
-    match /products/{product} {
-      allow read: if true;
-      allow write: if request.auth != null; // Temporarily relax write for setup
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
     }
     
-    // Users (Singular - matching current DB)
-    match /user/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-
-    // Users (Plural - legacy/future proof)
+    // ============================================
+    // USERS COLLECTION
+    // ============================================
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      allow create: if isAuthenticated() && isOwner(userId);
+      allow update: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      allow delete: if isAdmin();
     }
     
-    // Orders: Users read own, Admin read all. Create allowed by auth users.
+    // ============================================
+    // PRODUCTS COLLECTION
+    // ============================================
+    match /products/{productId} {
+      allow read: if true; // Public read for storefront
+      allow create, update, delete: if isAdmin();
+      
+      // Product variants subcollection
+      match /variants/{variantId} {
+        allow read: if true;
+        allow write: if isAdmin();
+      }
+      
+      // Product reviews subcollection
+      match /reviews/{reviewId} {
+        allow read: if true;
+        allow create: if isAuthenticated();
+        allow update, delete: if isAuthenticated() && (
+          resource.data.userId == request.auth.uid || isAdmin()
+        );
+      }
+    }
+    
+    // ============================================
+    // ORDERS COLLECTION
+    // ============================================
     match /orders/{orderId} {
-      allow read: if isAdmin() || (request.auth != null && request.auth.uid == resource.data.userId);
-      allow create: if request.auth != null;
-      allow update: if isAdmin(); // Only admin updates status
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin() || (
+        isAuthenticated() && 
+        resource.data.userId == request.auth.uid &&
+        request.resource.data.status == resource.data.status // Can't change status
+      );
+      allow delete: if isAdmin();
+      
+      // Order items subcollection
+      match /items/{itemId} {
+        allow read: if isAuthenticated() && (
+          get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid || 
+          isAdmin()
+        );
+        allow write: if isAdmin();
+      }
     }
     
-    // Marketplace Metadata
-    match /marketplace_settings/{setting} {
+    // ============================================
+    // INVOICES COLLECTION
+    // ============================================
+    match /invoices/{invoiceId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // ============================================
+    // PROMOTIONS / COUPONS COLLECTION
+    // ============================================
+    match /promotions/{promoId} {
+      allow read: if true; // Public can check if code is valid
+      allow create, update, delete: if isAdmin();
+      
+      // Track coupon usage
+      match /usage/{usageId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated();
+        allow update, delete: if isAdmin();
+      }
+    }
+    
+    // ============================================
+    // CART COLLECTION (User Shopping Carts)
+    // ============================================
+    match /carts/{userId} {
+      allow read, write: if isAuthenticated() && isOwner(userId);
+      
+      match /items/{itemId} {
+        allow read, write: if isAuthenticated() && isOwner(userId);
+      }
+    }
+    
+    // ============================================
+    // WISHLIST COLLECTION
+    // ============================================
+    match /wishlists/{userId} {
+      allow read, write: if isAuthenticated() && isOwner(userId);
+      
+      match /items/{itemId} {
+        allow read, write: if isAuthenticated() && isOwner(userId);
+      }
+    }
+    
+    // ============================================
+    // MARKETPLACE SETTINGS
+    // ============================================
+    match /marketplace_settings/{settingId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+    
+    // ============================================
+    // MARKETPLACE SYNC LOGS
+    // ============================================
+    match /sync_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if isAdmin();
+    }
+    
+    // ============================================
+    // CUSTOMER SUPPORT / INBOX
+    // ============================================
+    match /support_conversations/{conversationId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+      allow create: if isAuthenticated();
+      allow update: if isAdmin() || (
+        isAuthenticated() && resource.data.userId == request.auth.uid
+      );
+      
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() && (
+          get(/databases/$(database)/documents/support_conversations/$(conversationId)).data.userId == request.auth.uid || 
+          isAdmin()
+        );
+        allow create: if isAuthenticated();
+        allow update, delete: if isAdmin();
+      }
+    }
+    
+    // ============================================
+    // NOTIFICATIONS
+    // ============================================
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAdmin();
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+    
+    // ============================================
+    // ANALYTICS / STATS (Admin Only)
+    // ============================================
+    match /analytics/{docId} {
       allow read, write: if isAdmin();
     }
-
-    // Default deny
+    
+    match /sales_stats/{docId} {
+      allow read, write: if isAdmin();
+    }
+    
+    // ============================================
+    // SITE SETTINGS (Admin Only)
+    // ============================================
+    match /site_settings/{settingId} {
+      allow read: if true; // Public can read site settings
+      allow write: if isAdmin();
+    }
+    
+    // ============================================
+    // DEFAULT DENY ALL
+    // ============================================
     match /{document=**} {
       allow read, write: if false;
     }
