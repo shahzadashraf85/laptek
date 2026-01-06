@@ -1,28 +1,124 @@
 'use client';
 
-import React, { use } from 'react';
+import React, { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
 import Header from "@/components/store/Header";
-import { ALL_PRODUCTS } from '@/lib/products';
 import { useCart } from '@/lib/store';
 import { ProductReviews } from '@/components/store/ProductReviews';
-import { Check, Truck, ShieldCheck, ArrowRight } from 'lucide-react';
+import { Check, Truck, ShieldCheck, ArrowRight, Loader2 } from 'lucide-react';
+import { db } from '@/lib/firebase';
+import { doc, getDoc, collection, query, where, getDocs, limit } from 'firebase/firestore';
+
+interface Product {
+    id: string;
+    name: string;
+    category: string;
+    price: number;
+    image: string;
+    specs: string;
+    rating: number;
+    brand: string;
+    description: string;
+    specifications: Record<string, string>;
+    sku?: string;
+}
 
 export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
-    const product = ALL_PRODUCTS.find(p => p.id === id);
     const addItem = useCart(state => state.addItem);
 
-    if (!product) {
-        notFound();
+    const [product, setProduct] = useState<Product | null>(null);
+    const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(false);
+
+    useEffect(() => {
+        async function fetchProduct() {
+            setLoading(true);
+            try {
+                // Fetch Main Product
+                const docRef = doc(db, 'products', id);
+                const docSnap = await getDoc(docRef);
+
+                if (!docSnap.exists()) {
+                    setError(true);
+                    setLoading(false);
+                    return;
+                }
+
+                const data = docSnap.data();
+                const currentProduct: Product = {
+                    id: docSnap.id,
+                    name: data.title || 'Untitled',
+                    category: (data.category_code?.split('/')[1] || data.category_code || 'Uncategorized').toLowerCase(),
+                    price: data.offer?.price || 0,
+                    image: data.main_image_url || 'https://placehold.co/600',
+                    specs: Object.entries(data.specifications || {}).map(([k, v]) => `${v}`).join(', '),
+                    rating: data.stats?.rating || 0,
+                    brand: data.brand || 'Generic',
+                    description: data.short_description || '',
+                    specifications: data.specifications || {},
+                    sku: data.offer?.sku
+                };
+
+                setProduct(currentProduct);
+
+                // Fetch Related Products (Same category, exclude current)
+                const q = query(
+                    collection(db, 'products'),
+                    where('category_code', '==', data.category_code),
+                    limit(4)
+                );
+
+                const relatedSnap = await getDocs(q);
+                const related = relatedSnap.docs
+                    .filter(d => d.id !== id)
+                    .map(d => {
+                        const rd = d.data();
+                        return {
+                            id: d.id,
+                            name: rd.title || 'Untitled',
+                            category: (rd.category_code?.split('/')[1] || rd.category_code || '').toLowerCase(),
+                            price: rd.offer?.price || 0,
+                            image: rd.main_image_url || 'https://placehold.co/400',
+                            specs: '',
+                            rating: rd.stats?.rating || 0,
+                            brand: rd.brand || '',
+                            description: '',
+                            specifications: {}
+                        } as Product;
+                    })
+                    .slice(0, 3);
+
+                setRelatedProducts(related);
+
+            } catch (err) {
+                console.error("Error fetching product:", err);
+                setError(true);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        if (id) fetchProduct();
+    }, [id]);
+
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-background flex items-center justify-center">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            </div>
+        );
     }
 
-    const relatedProducts = ALL_PRODUCTS
-        .filter(p => p.category === product.category && p.id !== product.id)
-        .slice(0, 3);
+    if (error || !product) {
+        notFound(); // This will trigger Next.js not-found page
+        return null;
+    }
 
     return (
         <div className="min-h-screen bg-background text-foreground">
@@ -51,97 +147,125 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                             <img
                                 src={product.image}
                                 alt={product.name}
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                className="w-full h-full object-cover"
                             />
-                            <Badge className="absolute top-4 right-4 bg-white/90 text-black backdrop-blur-sm text-lg px-3 py-1">
-                                ★ {product.rating}
-                            </Badge>
+                            {product.price < 500 && (
+                                <Badge className="absolute top-4 left-4 h-8 px-3 bg-red-500">Sale</Badge>
+                            )}
                         </div>
                     </div>
 
-                    {/* Right: Product Info */}
+                    {/* Right: Product Details */}
                     <div>
-                        <div className="mb-2">
-                            <Badge variant="outline" className="mb-2 text-blue-600 border-blue-200 bg-blue-50 capitalize">
+                        <div className="mb-2 flex items-center gap-2">
+                            <Badge variant="outline" className="uppercase tracking-wider">
                                 {product.brand}
                             </Badge>
-                            <h1 className="text-4xl font-bold tracking-tight mb-4">{product.name}</h1>
-                            <div className="flex items-baseline gap-4 mb-6">
-                                <span className="text-4xl font-bold">${product.price.toLocaleString()}</span>
-                                <span className="text-green-600 text-sm font-medium flex items-center gap-1">
-                                    <Check className="w-4 h-4" /> In Stock
-                                </span>
+                            <div className="flex items-center text-yellow-400 text-sm">
+                                {'★'.repeat(Math.round(product.rating))}
+                                <span className="text-gray-300">{'★'.repeat(5 - Math.round(product.rating))}</span>
+                                <span className="text-gray-500 ml-2 text-xs">(128 reviews)</span>
                             </div>
                         </div>
 
-                        <p className="text-lg text-gray-600 mb-8 leading-relaxed">
-                            {product.description || `Experience the power of the new ${product.name}. Featuring ${product.specs}, it's designed to handle everything you throw at it with ease.`}
+                        <h1 className="text-4xl font-bold text-gray-900 mb-4">{product.name}</h1>
+                        <p className="text-lg text-gray-500 mb-6 leading-relaxed">
+                            {product.description}
                         </p>
 
-                        <div className="space-y-6 mb-8 p-6 bg-gray-50 rounded-xl border border-gray-100">
-                            {product.specifications && Object.entries(product.specifications).map(([key, value]) => (
-                                <div key={key} className="flex justify-between border-b border-gray-200 pb-2 last:border-0 last:pb-0">
-                                    <span className="font-medium text-gray-600">{key}</span>
-                                    <span className="font-semibold text-gray-900">{value}</span>
-                                </div>
-                            ))}
+                        <div className="text-4xl font-bold text-gray-900 mb-8">
+                            ${product.price ? product.price.toLocaleString() : 'N/A'}
                         </div>
 
                         <div className="flex flex-col sm:flex-row gap-4 mb-8">
-                            <Button size="lg" className="flex-1 bg-blue-600 hover:bg-blue-700 h-14 text-lg" onClick={() => addItem(product)}>
+                            <Button
+                                className="flex-1 h-14 text-lg bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200"
+                                onClick={() => addItem({
+                                    id: product.id,
+                                    name: product.name,
+                                    price: product.price,
+                                    image: product.image
+                                })}
+                            >
                                 Add to Cart
                             </Button>
-                            <Button size="lg" variant="outline" className="flex-1 h-14 text-lg">
-                                Buy Now
+                            <Button variant="outline" className="h-14 px-8 border-2">
+                                Save for Later
                             </Button>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-                            <div className="p-4 rounded-lg bg-gray-50">
-                                <Truck className="w-6 h-6 mx-auto mb-2 text-blue-600" />
+                        {/* Features / Benefits */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8 pt-8 border-t">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-green-600">
+                                    <Check className="w-5 h-5" />
+                                </div>
+                                <span className="text-sm font-medium">In Stock</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
+                                    <Truck className="w-5 h-5" />
+                                </div>
                                 <span className="text-sm font-medium">Free Shipping</span>
                             </div>
-                            <div className="p-4 rounded-lg bg-gray-50">
-                                <ShieldCheck className="w-6 h-6 mx-auto mb-2 text-blue-600" />
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center text-purple-600">
+                                    <ShieldCheck className="w-5 h-5" />
+                                </div>
                                 <span className="text-sm font-medium">2 Year Warranty</span>
                             </div>
-                            <div className="p-4 rounded-lg bg-gray-50">
-                                <Check className="w-6 h-6 mx-auto mb-2 text-blue-600" />
-                                <span className="text-sm font-medium">30 Day Return</span>
+                        </div>
+
+                        {/* Tech Specs */}
+                        <div>
+                            <h3 className="font-bold text-gray-900 mb-4">Technical Specifications</h3>
+                            <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                                {Object.entries(product.specifications).map(([key, value]) => (
+                                    <div key={key} className="flex justify-between py-2 border-b last:border-0 border-gray-200">
+                                        <span className="text-gray-500">{key.replace(/_/g, ' ')}</span>
+                                        <span className="font-medium text-gray-900">{String(value)}</span>
+                                    </div>
+                                ))}
+                                {product.sku && (
+                                    <div className="flex justify-between py-2 border-b last:border-0 border-gray-200">
+                                        <span className="text-gray-500">SKU</span>
+                                        <span className="font-medium text-gray-900">{product.sku}</span>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
-                </div>
-
-                <div className="my-16">
-                    <ProductReviews productId={id} />
                 </div>
 
                 {/* Related Products */}
                 {relatedProducts.length > 0 && (
-                    <section>
-                        <h2 className="text-2xl font-bold mb-8 flex items-center gap-2">
-                            You might also like
-                            <ArrowRight className="w-5 h-5 text-gray-400" />
-                        </h2>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {relatedProducts.map(rp => (
-                                <Link href={`/products/${rp.id}`} key={rp.id}>
-                                    <div className="group border rounded-xl overflow-hidden hover:shadow-lg transition-all bg-white">
-                                        <div className="aspect-video bg-gray-100 overflow-hidden relative">
-                                            <img src={rp.image} alt={rp.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                    <div className="mt-20">
+                        <h2 className="text-2xl font-bold mb-8">You Might Also Like</h2>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+                            {relatedProducts.map((p) => (
+                                <Link href={`/products/${p.id}`} key={p.id}>
+                                    <Card className="group overflow-hidden border-none shadow-sm hover:shadow-xl transition-all duration-300 h-full bg-white">
+                                        <div className="aspect-[4/3] relative overflow-hidden bg-gray-100">
+                                            <img
+                                                src={p.image}
+                                                alt={p.name}
+                                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                                            />
                                         </div>
                                         <div className="p-4">
-                                            <h3 className="font-bold truncate text-lg text-gray-900">{rp.name}</h3>
-                                            <p className="text-gray-500 text-sm mb-2">{rp.brand}</p>
-                                            <span className="font-bold text-blue-600 text-lg">${rp.price.toLocaleString()}</span>
+                                            <h3 className="font-bold text-gray-900 mb-1">{p.name}</h3>
+                                            <p className="text-blue-600 font-bold">${p.price.toLocaleString()}</p>
                                         </div>
-                                    </div>
+                                    </Card>
                                 </Link>
                             ))}
                         </div>
-                    </section>
+                    </div>
                 )}
+
+                {/* Reviews Section */}
+                <ProductReviews productId={product.id} />
+
             </main>
         </div>
     );

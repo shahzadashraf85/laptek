@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,11 +14,55 @@ import { Testimonials } from '@/components/store/home/Testimonials';
 import { StatsSection } from '@/components/store/home/StatsSection';
 import { Newsletter } from '@/components/store/home/Newsletter';
 import { LiveChat } from '@/components/store/LiveChat';
-import { ALL_PRODUCTS } from '@/lib/products';
 import { Card } from '@/components/ui/card';
+import { db } from '@/lib/firebase';
+import { collection, query, limit, getDocs, orderBy } from 'firebase/firestore';
+import { Loader2 } from 'lucide-react';
+
+interface FeaturedProduct {
+  id: string;
+  name: string;
+  category: string;
+  price: number;
+  image: string;
+  specs: string;
+  rating: number;
+}
 
 export default function Home() {
-  const featuredProducts = ALL_PRODUCTS.slice(0, 4);
+  const [featuredProducts, setFeaturedProducts] = useState<FeaturedProduct[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchFeatured() {
+      try {
+        // Fetch 4 most recent products as "Trending"
+        const q = query(collection(db, 'products'), orderBy('createdAt', 'desc'), limit(4));
+        const snapshot = await getDocs(q);
+
+        const products = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            name: data.title || 'Untitled',
+            category: (data.category_code?.split('/')[1] || data.category_code || 'Uncategorized').toLowerCase(),
+            price: data.offer?.price || 0,
+            image: data.main_image_url || 'https://placehold.co/400',
+            specs: Object.entries(data.specifications || {}).map(([k, v]) => `${v}`).join(', ').substring(0, 30) + '...',
+            rating: data.stats?.rating || 5
+          };
+        });
+
+        setFeaturedProducts(products);
+      } catch (error) {
+        console.error("Failed to fetch featured products:", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchFeatured();
+  }, []);
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
@@ -43,39 +87,65 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-            {featuredProducts.map((product) => (
-              <Link href={`/products/${product.id}`} key={product.id}>
-                <Card className="group overflow-hidden border-none shadow-sm hover:shadow-xl transition-all duration-300 h-full bg-white">
-                  <div className="relative aspect-square overflow-hidden bg-gray-100">
-                    <img
-                      src={product.image}
-                      alt={product.name}
-                      className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500"
-                    />
-                    {product.rating >= 4.8 && (
-                      <div className="absolute top-2 left-2">
-                        <Badge className="bg-orange-500 hover:bg-orange-600">Best Seller</Badge>
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-5">
-                    <p className="text-xs text-blue-600 font-medium uppercase tracking-wider mb-2">{product.category}</p>
-                    <h3 className="font-bold text-lg mb-2 group-hover:text-blue-600 transition-colors">{product.name}</h3>
-                    <div className="flex items-center justify-between mt-4">
-                      <span className="text-xl font-bold">${product.price.toLocaleString()}</span>
-                      <span className="text-sm text-gray-500">★ {product.rating}</span>
+          {loading ? (
+            <div className="flex justify-center py-10">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+              {featuredProducts.map((product) => (
+                <Link href={`/products/${product.id}`} key={product.id}>
+                  <Card className="group overflow-hidden border-none shadow-sm hover:shadow-xl transition-all duration-300 h-full bg-white">
+                    <div className="relative aspect-square overflow-hidden bg-gray-100">
+                      <img
+                        src={product.image}
+                        alt={product.name}
+                        className="object-cover w-full h-full group-hover:scale-110 transition-transform duration-500"
+                      />
+                      {product.price < 500 && (
+                        <Badge className="absolute top-3 left-3 bg-red-500 hover:bg-red-600">
+                          Sale
+                        </Badge>
+                      )}
+                      <Button
+                        className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-full shadow-lg"
+                        size="sm"
+                      >
+                        Quick View
+                      </Button>
                     </div>
-                  </div>
-                </Card>
-              </Link>
-            ))}
-          </div>
+                    <div className="p-4">
+                      <div className="flex justify-between items-start mb-2">
+                        <Badge variant="outline" className="text-xs font-normal bg-gray-50 uppercase tracking-wider">
+                          {product.category}
+                        </Badge>
+                        <div className="flex items-center text-yellow-400 text-xs">
+                          {'★'.repeat(Math.round(product.rating))}
+                          <span className="text-gray-300">{'★'.repeat(5 - Math.round(product.rating))}</span>
+                        </div>
+                      </div>
+                      <h3 className="font-bold text-gray-900 group-hover:text-blue-600 transition-colors mb-1 truncate">
+                        {product.name}
+                      </h3>
+                      <p className="text-sm text-gray-500 mb-3 truncate">
+                        {product.specs}
+                      </p>
+                      <div className="flex items-center justify-between">
+                        <span className="text-lg font-bold text-gray-900">${product.price.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          )}
 
           <div className="text-center mt-12">
-            <Button size="lg" variant="outline" asChild>
-              <Link href="/products">View All Products</Link>
-            </Button>
+            <Link href="/products">
+              <Button size="lg" variant="outline" className="min-w-[200px] border-2">
+                View All Products
+              </Button>
+            </Link>
           </div>
         </div>
       </section>
@@ -84,67 +154,7 @@ export default function Home() {
 
       <StatsSection />
 
-      {/* Brand Marquee (Static for now) */}
-      <section className="py-12 border-y">
-        <div className="container mx-auto px-4">
-          <p className="text-center text-sm font-medium text-gray-400 mb-8 uppercase tracking-widest">Trusted by industry leaders</p>
-          <div className="flex flex-wrap justify-center items-center gap-12 md:gap-20 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
-            {/* Simple text placeholders for brands, normally would be SVGs */}
-            <span className="text-2xl font-bold">APPLE</span>
-            <span className="text-2xl font-bold">SAMSUNG</span>
-            <span className="text-2xl font-bold">DELL</span>
-            <span className="text-2xl font-bold">SONY</span>
-            <span className="text-2xl font-bold">ALIENWARE</span>
-            <span className="text-2xl font-bold">ASUS</span>
-          </div>
-        </div>
-      </section>
-
       <Newsletter />
-
-      <footer className="bg-white border-t py-12 text-sm">
-        <div className="container mx-auto px-4 grid grid-cols-1 md:grid-cols-4 gap-8">
-          <div className="space-y-4">
-            <h3 className="font-bold text-lg">LAPTEK</h3>
-            <p className="text-gray-500 max-w-xs">
-              Your premier destination for next-gen IT gear. Featuring the latest tech from top brands.
-            </p>
-          </div>
-
-          <div>
-            <h4 className="font-semibold mb-4">Shop</h4>
-            <ul className="space-y-2 text-gray-500">
-              <li><Link href="/products?category=laptops" className="hover:text-blue-600">Laptops</Link></li>
-              <li><Link href="/products?category=phones" className="hover:text-blue-600">Phones</Link></li>
-              <li><Link href="/products?category=desktops" className="hover:text-blue-600">Desktops</Link></li>
-              <li><Link href="/products?category=accessories" className="hover:text-blue-600">Accessories</Link></li>
-            </ul>
-          </div>
-
-          <div>
-            <h4 className="font-semibold mb-4">Support</h4>
-            <ul className="space-y-2 text-gray-500">
-              <li><Link href="/profile" className="hover:text-blue-600">My Account</Link></li>
-              <li><Link href="/profile" className="hover:text-blue-600">Order Status</Link></li>
-              <li><Link href="#" className="hover:text-blue-600">Contact Us</Link></li>
-              <li><Link href="#" className="hover:text-blue-600">Returns</Link></li>
-            </ul>
-          </div>
-
-          <div>
-            <h4 className="font-semibold mb-4">Legal</h4>
-            <ul className="space-y-2 text-gray-500">
-              <li><Link href="#" className="hover:text-blue-600">Privacy Policy</Link></li>
-              <li><Link href="#" className="hover:text-blue-600">Terms of Service</Link></li>
-            </ul>
-          </div>
-        </div>
-        <div className="container mx-auto px-4 mt-12 pt-8 border-t text-center text-gray-400">
-          © 2026 LapTek Inc. All rights reserved.
-        </div>
-      </footer>
-
-      <LiveChat />
     </div>
   );
 }
