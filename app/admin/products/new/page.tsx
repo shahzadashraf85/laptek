@@ -350,20 +350,20 @@ export default function NewProductPage() {
 
                 // Map flat form data to structured Firestore schema
                 offer: {
-                    price: parseFloat(formData.price),
-                    quantity: parseInt(formData.quantity) || 0,
-                    sku: formData.sku,
-                    state: formData.condition,
-                    min_quantity_alert: parseInt(formData.min_quantity_alert) || 5,
+                    price: parseFloat(formData.price || '0'),
+                    quantity: parseInt(formData.quantity || '0'),
+                    sku: formData.sku || null,
+                    state: formData.condition || 'New',
+                    min_quantity_alert: parseInt(formData.min_quantity_alert || '5'),
                 },
 
-                // Store all dynamic specs
-                specifications: {
+                // Store all dynamic specs & ensure no undefined
+                specifications: Object.entries({
                     ...formData.specs,
-                    condition: formData.condition // Ensure condition is also in specs if needed
-                },
+                    condition: formData.condition || 'New'
+                }).reduce((acc, [k, v]) => ({ ...acc, [k]: v || '' }), {}),
 
-                status: formData.status,
+                status: formData.status || 'active',
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
             };
