@@ -19,13 +19,8 @@ import {
     DollarSign,
     Cpu,
     MousePointer2,
-    Sparkles,
-    ImagePlus,
     TrendingUp,
-    Search,
     Lightbulb,
-    Zap,
-    BarChart3,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -109,7 +104,6 @@ export default function NewProductPage() {
     const [aiModalOpen, setAiModalOpen] = useState(false);
     const [aiPrompt, setAiPrompt] = useState('');
     const [aiPriceLoading, setAiPriceLoading] = useState(false);
-    const [aiSeoLoading, setAiSeoLoading] = useState(false);
     const [suggestedPrice, setSuggestedPrice] = useState<{ min: number, max: number, optimal: number, walmart?: number, bestbuy?: number } | null>(null);
     const [marketInsights, setMarketInsights] = useState<{ avgPrice: number, competitors: number, demand: string, sources?: string[] } | null>(null);
 
@@ -252,30 +246,6 @@ export default function NewProductPage() {
             toast.error(error.message || 'Failed to analyze market prices', { id: loadingToast });
         } finally {
             setAiPriceLoading(false);
-        }
-    };
-
-    // AI Feature: SEO Optimizer
-    const handleAISEOOptimize = async () => {
-        if (!formData.title) {
-            toast.error('Please enter a product title first');
-            return;
-        }
-        setAiSeoLoading(true);
-        try {
-            await new Promise(resolve => setTimeout(resolve, 1500));
-            const seoTitle = `${formData.title} | Best Price & Free Shipping | ${formData.brand || 'Premium'} Official`;
-            const seoDesc = `Shop ${formData.title} at the best price. ${formData.brand ? formData.brand + ' certified.' : ''} Fast shipping, warranty included. ${selectedCategory?.name} on sale now!`;
-            setFormData(prev => ({
-                ...prev,
-                title: seoTitle.substring(0, 100),
-                short_description: seoDesc
-            }));
-            toast.success('SEO optimization applied!');
-        } catch (error) {
-            toast.error('SEO optimization failed');
-        } finally {
-            setAiSeoLoading(false);
         }
     };
 
@@ -539,44 +509,6 @@ export default function NewProductPage() {
                                     <Input name="specs.model_number" value={formData.specs['model_number'] || ''} onChange={handleInputChange} />
                                 </div>
                             )}
-                        </div>
-                    </Card>
-
-                    {/* AI Quick Tools Panel */}
-                    <Card className="p-4 bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 border-indigo-200">
-                        <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-2">
-                                <div className="p-2 bg-white rounded-lg shadow-sm">
-                                    <Sparkles className="w-5 h-5 text-indigo-600" />
-                                </div>
-                                <div>
-                                    <h3 className="text-sm font-bold text-gray-900">AI Power Tools</h3>
-                                    <p className="text-xs text-gray-600">One-click automation</p>
-                                </div>
-                            </div>
-                            <Badge className="bg-indigo-600 text-white">Beta</Badge>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <Button
-                                variant="outline"
-                                onClick={handleAISEOOptimize}
-                                disabled={aiSeoLoading}
-                                className="bg-white hover:bg-indigo-50 border-indigo-200 flex-col h-auto py-3"
-                            >
-                                {aiSeoLoading ? <Loader2 className="w-5 h-5 animate-spin mb-1" /> : <Search className="w-5 h-5 mb-1 text-indigo-600" />}
-                                <span className="text-xs font-semibold">SEO Optimizer</span>
-                                <span className="text-[10px] text-gray-500">Boost visibility</span>
-                            </Button>
-                            <Button
-                                variant="outline"
-                                onClick={handleAIPriceSuggestion}
-                                disabled={aiPriceLoading}
-                                className="bg-white hover:bg-green-50 border-green-200 flex-col h-auto py-3"
-                            >
-                                {aiPriceLoading ? <Loader2 className="w-5 h-5 animate-spin mb-1" /> : <TrendingUp className="w-5 h-5 mb-1 text-green-600" />}
-                                <span className="text-xs font-semibold">Walmart & Best Buy Pricing</span>
-                                <span className="text-[10px] text-gray-500">Real-time market data</span>
-                            </Button>
                         </div>
                     </Card>
 
