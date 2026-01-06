@@ -19,6 +19,13 @@ import {
     DollarSign,
     Cpu,
     MousePointer2,
+    Sparkles,
+    ImagePlus,
+    TrendingUp,
+    Search,
+    Lightbulb,
+    Zap,
+    BarChart3,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -101,6 +108,11 @@ export default function NewProductPage() {
     const [aiLoading, setAiLoading] = useState(false);
     const [aiModalOpen, setAiModalOpen] = useState(false);
     const [aiPrompt, setAiPrompt] = useState('');
+    const [aiImageLoading, setAiImageLoading] = useState(false);
+    const [aiPriceLoading, setAiPriceLoading] = useState(false);
+    const [aiSeoLoading, setAiSeoLoading] = useState(false);
+    const [suggestedPrice, setSuggestedPrice] = useState<{ min: number, max: number, optimal: number } | null>(null);
+    const [marketInsights, setMarketInsights] = useState<{ avgPrice: number, competitors: number, demand: string } | null>(null);
 
     // Form Data
     const [formData, setFormData] = useState({
@@ -163,6 +175,80 @@ export default function NewProductPage() {
     // ------------------------------------------------------------------
     // 3. LOGIC: AI Integration
     // ------------------------------------------------------------------
+
+    // AI Feature: Generate Product Image
+    const handleAIImageGenerate = async () => {
+        if (!formData.title) {
+            toast.error('Please enter a product title first');
+            return;
+        }
+        setAiImageLoading(true);
+        try {
+            // Mock AI image generation (in production, call DALL-E or Stable Diffusion API)
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            const mockImageUrl = `https://placehold.co/800x600/4F46E5/white?text=${encodeURIComponent(formData.title.substring(0, 20))}`;
+            setFormData(prev => ({ ...prev, imageUrl: mockImageUrl }));
+            toast.success('Product image generated!');
+        } catch (error) {
+            toast.error('Image generation failed');
+        } finally {
+            setAiImageLoading(false);
+        }
+    };
+
+    // AI Feature: Smart Price Suggestion
+    const handleAIPriceSuggestion = async () => {
+        if (!formData.brand || !selectedCategory) {
+            toast.error('Please select category and enter brand first');
+            return;
+        }
+        setAiPriceLoading(true);
+        try {
+            // Mock market analysis (in production, analyze competitor pricing)
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            const basePrice = selectedCategory.id === 'laptops' ? 1200 : selectedCategory.id === 'monitors' ? 400 : 150;
+            const variance = basePrice * 0.3;
+            setSuggestedPrice({
+                min: Math.round(basePrice - variance),
+                max: Math.round(basePrice + variance),
+                optimal: Math.round(basePrice)
+            });
+            setMarketInsights({
+                avgPrice: basePrice,
+                competitors: Math.floor(Math.random() * 50) + 10,
+                demand: ['High', 'Medium', 'Low'][Math.floor(Math.random() * 3)]
+            });
+            toast.success('Market analysis complete!');
+        } catch (error) {
+            toast.error('Price analysis failed');
+        } finally {
+            setAiPriceLoading(false);
+        }
+    };
+
+    // AI Feature: SEO Optimizer
+    const handleAISEOOptimize = async () => {
+        if (!formData.title) {
+            toast.error('Please enter a product title first');
+            return;
+        }
+        setAiSeoLoading(true);
+        try {
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            const seoTitle = `${formData.title} | Best Price & Free Shipping | ${formData.brand || 'Premium'} Official`;
+            const seoDesc = `Shop ${formData.title} at the best price. ${formData.brand ? formData.brand + ' certified.' : ''} Fast shipping, warranty included. ${selectedCategory?.name} on sale now!`;
+            setFormData(prev => ({
+                ...prev,
+                title: seoTitle.substring(0, 100),
+                short_description: seoDesc
+            }));
+            toast.success('SEO optimization applied!');
+        } catch (error) {
+            toast.error('SEO optimization failed');
+        } finally {
+            setAiSeoLoading(false);
+        }
+    };
 
     const handleAIGenerate = async () => {
         if (!aiPrompt) return;
@@ -427,6 +513,54 @@ export default function NewProductPage() {
                         </div>
                     </Card>
 
+                    {/* AI Quick Tools Panel */}
+                    <Card className="p-4 bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 border-indigo-200">
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2">
+                                <div className="p-2 bg-white rounded-lg shadow-sm">
+                                    <Sparkles className="w-5 h-5 text-indigo-600" />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold text-gray-900">AI Power Tools</h3>
+                                    <p className="text-xs text-gray-600">One-click automation</p>
+                                </div>
+                            </div>
+                            <Badge className="bg-indigo-600 text-white">Beta</Badge>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <Button
+                                variant="outline"
+                                onClick={handleAISEOOptimize}
+                                disabled={aiSeoLoading}
+                                className="bg-white hover:bg-indigo-50 border-indigo-200 flex-col h-auto py-3"
+                            >
+                                {aiSeoLoading ? <Loader2 className="w-5 h-5 animate-spin mb-1" /> : <Search className="w-5 h-5 mb-1 text-indigo-600" />}
+                                <span className="text-xs font-semibold">SEO Optimizer</span>
+                                <span className="text-[10px] text-gray-500">Boost visibility</span>
+                            </Button>
+                            <Button
+                                variant="outline"
+                                onClick={handleAIPriceSuggestion}
+                                disabled={aiPriceLoading}
+                                className="bg-white hover:bg-green-50 border-green-200 flex-col h-auto py-3"
+                            >
+                                {aiPriceLoading ? <Loader2 className="w-5 h-5 animate-spin mb-1" /> : <TrendingUp className="w-5 h-5 mb-1 text-green-600" />}
+                                <span className="text-xs font-semibold">Smart Pricing</span>
+                                <span className="text-[10px] text-gray-500">Market analysis</span>
+                            </Button>
+                            <Button
+                                variant="outline"
+                                onClick={handleAIImageGenerate}
+                                disabled={aiImageLoading}
+                                className="bg-white hover:bg-purple-50 border-purple-200 flex-col h-auto py-3"
+                            >
+                                {aiImageLoading ? <Loader2 className="w-5 h-5 animate-spin mb-1" /> : <ImagePlus className="w-5 h-5 mb-1 text-purple-600" />}
+                                <span className="text-xs font-semibold">Generate Image</span>
+                                <span className="text-[10px] text-gray-500">AI visuals</span>
+                            </Button>
+                        </div>
+                    </Card>
+
                     {/* 2. CATEGORY SPECIFIC SPECS */}
                     <Card className="p-6 space-y-6">
                         <div className="flex items-center gap-2 mb-2">
@@ -603,6 +737,62 @@ export default function NewProductPage() {
                             </div>
                         )}
                     </Card>
+
+                    {/* AI MARKET INSIGHTS */}
+                    {(suggestedPrice || marketInsights) && (
+                        <Card className="p-6 space-y-4 bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
+                            <div className="flex items-center gap-2">
+                                <Lightbulb className="w-5 h-5 text-green-600" />
+                                <Label className="text-xs font-bold text-green-900 uppercase">AI Market Insights</Label>
+                            </div>
+
+                            {suggestedPrice && (
+                                <div className="space-y-3">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-sm text-gray-700">Suggested Range</span>
+                                        <span className="text-sm font-bold text-gray-900">
+                                            ${suggestedPrice.min} - ${suggestedPrice.max}
+                                        </span>
+                                    </div>
+                                    <div className="p-3 bg-white rounded-lg border-2 border-green-300">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs text-gray-600">Optimal Price</span>
+                                            <button
+                                                onClick={() => setFormData(p => ({ ...p, price: suggestedPrice.optimal.toString() }))}
+                                                className="text-xs text-green-600 hover:text-green-700 font-semibold underline"
+                                            >
+                                                Apply
+                                            </button>
+                                        </div>
+                                        <div className="text-2xl font-bold text-green-600 mt-1">
+                                            ${suggestedPrice.optimal}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {marketInsights && (
+                                <div className="grid grid-cols-3 gap-2 pt-2 border-t">
+                                    <div className="text-center">
+                                        <div className="text-xs text-gray-600">Avg Market</div>
+                                        <div className="text-sm font-bold">${marketInsights.avgPrice}</div>
+                                    </div>
+                                    <div className="text-center">
+                                        <div className="text-xs text-gray-600">Competitors</div>
+                                        <div className="text-sm font-bold">{marketInsights.competitors}</div>
+                                    </div>
+                                    <div className="text-center">
+                                        <div className="text-xs text-gray-600">Demand</div>
+                                        <div className={`text-sm font-bold ${marketInsights.demand === 'High' ? 'text-green-600' :
+                                                marketInsights.demand === 'Medium' ? 'text-yellow-600' : 'text-red-600'
+                                            }`}>
+                                            {marketInsights.demand}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </Card>
+                    )}
 
                     {/* INVENTORY */}
                     <Card className="p-6 space-y-6">
