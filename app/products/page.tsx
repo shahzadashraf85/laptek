@@ -50,15 +50,15 @@ function ProductGridContent() {
                 // Map Firestore fields to UI fields
                 return {
                     id: doc.id,
-                    name: data.title || 'Untitled',
+                    name: typeof data.title === 'object' ? (data.title?.en || String(data.title)) : (data.title || 'Untitled'),
                     // Fallback to simple category extraction from code or raw string
                     category: (data.category_code?.split('/')[1] || data.category_code || 'Uncategorized').toLowerCase(),
                     price: data.offer?.price || 0,
                     image: data.main_image_url || 'https://placehold.co/400',
                     specs: Object.entries(data.specifications || {}).map(([k, v]) => `${v}`).join(', ').substring(0, 30) + '...',
                     rating: data.stats?.rating || 0,
-                    brand: data.brand || 'Generic',
-                    description: data.short_description || ''
+                    brand: typeof data.brand === 'object' ? (data.brand?.en || String(data.brand)) : (data.brand || 'Generic'),
+                    description: typeof data.short_description === 'object' ? (data.short_description?.en || String(data.short_description)) : (data.short_description || '')
                 };
             });
             setProducts(fetchedProducts);

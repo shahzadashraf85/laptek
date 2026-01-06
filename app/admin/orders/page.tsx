@@ -53,7 +53,7 @@ export default function OrdersPage() {
                 return {
                     id: doc.id,
                     orderNumber: data.orderNumber || doc.id.substring(0, 8),
-                    customer: data.customerName || 'Guest',
+                    customer: typeof data.customerName === 'object' ? (data.customerName?.en || String(data.customerName)) : (data.customerName || 'Guest'),
                     email: data.customerEmail || 'No Email',
                     product: productSummary,
                     amount: data.pricing?.total || 0,

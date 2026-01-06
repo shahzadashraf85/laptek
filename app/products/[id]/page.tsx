@@ -53,14 +53,14 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 const data = docSnap.data();
                 const currentProduct: Product = {
                     id: docSnap.id,
-                    name: data.title || 'Untitled',
+                    name: typeof data.title === 'object' ? (data.title?.en || String(data.title)) : (data.title || 'Untitled'),
                     category: (data.category_code?.split('/')[1] || data.category_code || 'Uncategorized').toLowerCase(),
                     price: data.offer?.price || 0,
                     image: data.main_image_url || 'https://placehold.co/600',
                     specs: Object.entries(data.specifications || {}).map(([k, v]) => `${v}`).join(', '),
                     rating: data.stats?.rating || 0,
-                    brand: data.brand || 'Generic',
-                    description: data.short_description || '',
+                    brand: typeof data.brand === 'object' ? (data.brand?.en || String(data.brand)) : (data.brand || 'Generic'),
+                    description: typeof data.short_description === 'object' ? (data.short_description?.en || String(data.short_description)) : (data.short_description || ''),
                     specifications: data.specifications || {},
                     sku: data.offer?.sku
                 };
@@ -81,13 +81,13 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                         const rd = d.data();
                         return {
                             id: d.id,
-                            name: rd.title || 'Untitled',
+                            name: typeof rd.title === 'object' ? (rd.title?.en || String(rd.title)) : (rd.title || 'Untitled'),
                             category: (rd.category_code?.split('/')[1] || rd.category_code || '').toLowerCase(),
                             price: rd.offer?.price || 0,
                             image: rd.main_image_url || 'https://placehold.co/400',
                             specs: '',
                             rating: rd.stats?.rating || 0,
-                            brand: rd.brand || '',
+                            brand: typeof rd.brand === 'object' ? (rd.brand?.en || String(rd.brand)) : (rd.brand || ''),
                             description: '',
                             specifications: {}
                         } as Product;

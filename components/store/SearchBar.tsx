@@ -67,7 +67,7 @@ export function SearchBar() {
                 const data = doc.data();
                 return {
                     id: doc.id,
-                    name: data.title || 'Untitled',
+                    name: typeof data.title === 'object' ? (data.title?.en || String(data.title)) : (data.title || 'Untitled'),
                     category: (data.category_code?.split('/')[1] || 'Uncategorized'),
                     price: data.offer?.price || 0,
                     image: data.main_image_url || 'https://placehold.co/100'

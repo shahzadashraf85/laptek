@@ -60,7 +60,7 @@ export default function UsersPage() {
                 const data = doc.data();
                 return {
                     id: doc.id,
-                    name: data.displayName || data.name || 'Unknown User',
+                    name: typeof data.displayName === 'object' ? (data.displayName?.en || String(data.displayName)) : (data.displayName || data.name || 'Unknown User'),
                     email: data.email || 'No Email',
                     role: data.role || 'customer', // default to customer
                     status: data.status || 'active',
