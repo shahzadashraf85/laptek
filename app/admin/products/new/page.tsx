@@ -108,11 +108,10 @@ export default function NewProductPage() {
     const [aiLoading, setAiLoading] = useState(false);
     const [aiModalOpen, setAiModalOpen] = useState(false);
     const [aiPrompt, setAiPrompt] = useState('');
-    const [aiImageLoading, setAiImageLoading] = useState(false);
     const [aiPriceLoading, setAiPriceLoading] = useState(false);
     const [aiSeoLoading, setAiSeoLoading] = useState(false);
-    const [suggestedPrice, setSuggestedPrice] = useState<{ min: number, max: number, optimal: number } | null>(null);
-    const [marketInsights, setMarketInsights] = useState<{ avgPrice: number, competitors: number, demand: string } | null>(null);
+    const [suggestedPrice, setSuggestedPrice] = useState<{ min: number, max: number, optimal: number, walmart?: number, bestbuy?: number } | null>(null);
+    const [marketInsights, setMarketInsights] = useState<{ avgPrice: number, competitors: number, demand: string, sources?: string[] } | null>(null);
 
     // Form Data
     const [formData, setFormData] = useState({
@@ -176,51 +175,81 @@ export default function NewProductPage() {
     // 3. LOGIC: AI Integration
     // ------------------------------------------------------------------
 
-    // AI Feature: Generate Product Image
-    const handleAIImageGenerate = async () => {
-        if (!formData.title) {
-            toast.error('Please enter a product title first');
-            return;
-        }
-        setAiImageLoading(true);
-        try {
-            // Mock AI image generation (in production, call DALL-E or Stable Diffusion API)
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            const mockImageUrl = `https://placehold.co/800x600/4F46E5/white?text=${encodeURIComponent(formData.title.substring(0, 20))}`;
-            setFormData(prev => ({ ...prev, imageUrl: mockImageUrl }));
-            toast.success('Product image generated!');
-        } catch (error) {
-            toast.error('Image generation failed');
-        } finally {
-            setAiImageLoading(false);
-        }
-    };
-
-    // AI Feature: Smart Price Suggestion
+    // AI Feature: Real-time Price Analysis from Walmart & Best Buy Canada
     const handleAIPriceSuggestion = async () => {
-        if (!formData.brand || !selectedCategory) {
-            toast.error('Please select category and enter brand first');
+        if (!formData.title || !formData.brand) {
+            toast.error('Please enter product title and brand first');
             return;
         }
         setAiPriceLoading(true);
+        const loadingToast = toast.loading('Analyzing prices from Walmart & Best Buy Canada...');
+
         try {
-            // Mock market analysis (in production, analyze competitor pricing)
-            await new Promise(resolve => setTimeout(resolve, 1500));
-            const basePrice = selectedCategory.id === 'laptops' ? 1200 : selectedCategory.id === 'monitors' ? 400 : 150;
-            const variance = basePrice * 0.3;
+            // Search query combining brand and product info
+            const searchQuery = `${formData.brand} ${formData.title} ${selectedCategory?.name || ''}`;
+
+            // Call our backend API that scrapes/queries Walmart and Best Buy Canada
+            const response = await fetch('/api/marketplace/price-check', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    query: searchQuery,
+                    category: selectedCategory?.code,
+                    brand: formData.brand
+                })
+            });
+
+            const data = await response.json();
+
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to fetch pricing data');
+            }
+
+            // Extract pricing from both marketplaces
+            const prices = [];
+            const sources = [];
+
+            if (data.walmart?.price) {
+                prices.push(data.walmart.price);
+                sources.push('Walmart Canada');
+            }
+            if (data.bestbuy?.price) {
+                prices.push(data.bestbuy.price);
+                sources.push('Best Buy Canada');
+            }
+
+            if (prices.length === 0) {
+                toast.error('No pricing data found. Try a more specific product title.', { id: loadingToast });
+                return;
+            }
+
+            // Calculate statistics
+            const minPrice = Math.min(...prices);
+            const maxPrice = Math.max(...prices);
+            const avgPrice = Math.round(prices.reduce((a, b) => a + b, 0) / prices.length);
+
+            // Suggest competitive pricing (slightly below average)
+            const optimalPrice = Math.round(avgPrice * 0.95);
+
             setSuggestedPrice({
-                min: Math.round(basePrice - variance),
-                max: Math.round(basePrice + variance),
-                optimal: Math.round(basePrice)
+                min: minPrice,
+                max: maxPrice,
+                optimal: optimalPrice,
+                walmart: data.walmart?.price,
+                bestbuy: data.bestbuy?.price
             });
+
             setMarketInsights({
-                avgPrice: basePrice,
-                competitors: Math.floor(Math.random() * 50) + 10,
-                demand: ['High', 'Medium', 'Low'][Math.floor(Math.random() * 3)]
+                avgPrice,
+                competitors: prices.length,
+                demand: data.demand || 'Medium',
+                sources
             });
-            toast.success('Market analysis complete!');
-        } catch (error) {
-            toast.error('Price analysis failed');
+
+            toast.success(`Found ${prices.length} competitor price(s)!`, { id: loadingToast });
+        } catch (error: any) {
+            console.error('Price analysis error:', error);
+            toast.error(error.message || 'Failed to analyze market prices', { id: loadingToast });
         } finally {
             setAiPriceLoading(false);
         }
@@ -527,7 +556,7 @@ export default function NewProductPage() {
                             </div>
                             <Badge className="bg-indigo-600 text-white">Beta</Badge>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <Button
                                 variant="outline"
                                 onClick={handleAISEOOptimize}
@@ -545,18 +574,8 @@ export default function NewProductPage() {
                                 className="bg-white hover:bg-green-50 border-green-200 flex-col h-auto py-3"
                             >
                                 {aiPriceLoading ? <Loader2 className="w-5 h-5 animate-spin mb-1" /> : <TrendingUp className="w-5 h-5 mb-1 text-green-600" />}
-                                <span className="text-xs font-semibold">Smart Pricing</span>
-                                <span className="text-[10px] text-gray-500">Market analysis</span>
-                            </Button>
-                            <Button
-                                variant="outline"
-                                onClick={handleAIImageGenerate}
-                                disabled={aiImageLoading}
-                                className="bg-white hover:bg-purple-50 border-purple-200 flex-col h-auto py-3"
-                            >
-                                {aiImageLoading ? <Loader2 className="w-5 h-5 animate-spin mb-1" /> : <ImagePlus className="w-5 h-5 mb-1 text-purple-600" />}
-                                <span className="text-xs font-semibold">Generate Image</span>
-                                <span className="text-[10px] text-gray-500">AI visuals</span>
+                                <span className="text-xs font-semibold">Walmart & Best Buy Pricing</span>
+                                <span className="text-[10px] text-gray-500">Real-time market data</span>
                             </Button>
                         </div>
                     </Card>
@@ -771,6 +790,25 @@ export default function NewProductPage() {
                                 </div>
                             )}
 
+                            {/* Individual Marketplace Prices */}
+                            {suggestedPrice && (suggestedPrice.walmart || suggestedPrice.bestbuy) && (
+                                <div className="space-y-2 pt-3 border-t">
+                                    <div className="text-xs font-semibold text-gray-700 mb-2">Competitor Prices:</div>
+                                    {suggestedPrice.walmart && (
+                                        <div className="flex justify-between items-center p-2 bg-blue-50 rounded">
+                                            <span className="text-xs font-medium text-blue-900">🛒 Walmart Canada</span>
+                                            <span className="text-sm font-bold text-blue-700">${suggestedPrice.walmart}</span>
+                                        </div>
+                                    )}
+                                    {suggestedPrice.bestbuy && (
+                                        <div className="flex justify-between items-center p-2 bg-yellow-50 rounded">
+                                            <span className="text-xs font-medium text-yellow-900">⚡ Best Buy Canada</span>
+                                            <span className="text-sm font-bold text-yellow-700">${suggestedPrice.bestbuy}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             {marketInsights && (
                                 <div className="grid grid-cols-3 gap-2 pt-2 border-t">
                                     <div className="text-center">
@@ -784,7 +822,7 @@ export default function NewProductPage() {
                                     <div className="text-center">
                                         <div className="text-xs text-gray-600">Demand</div>
                                         <div className={`text-sm font-bold ${marketInsights.demand === 'High' ? 'text-green-600' :
-                                                marketInsights.demand === 'Medium' ? 'text-yellow-600' : 'text-red-600'
+                                            marketInsights.demand === 'Medium' ? 'text-yellow-600' : 'text-red-600'
                                             }`}>
                                             {marketInsights.demand}
                                         </div>
