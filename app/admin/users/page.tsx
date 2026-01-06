@@ -1,11 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { db } from '@/lib/firebase';
+import { collection, onSnapshot, query, orderBy, Timestamp } from 'firebase/firestore';
 import {
     Search,
     Filter,
@@ -18,7 +20,8 @@ import {
     Calendar,
     ShoppingBag,
     Ban,
-    CheckCircle
+    CheckCircle,
+    Loader2
 } from 'lucide-react';
 import {
     DropdownMenu,
@@ -28,94 +31,69 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import toast from 'react-hot-toast';
 
-const MOCK_USERS = [
-    {
-        id: 1,
-        name: 'Shahzad Ashraf',
-        email: 'admin@laptek.com',
-        role: 'Admin',
-        status: 'active',
-        joined: '2023-01-01',
-        orders: 12,
-        spent: 15430,
-        avatar: 'https://github.com/shadcn.png',
-        location: 'New York, USA'
-    },
-    {
-        id: 2,
-        name: 'Sarah Johnson',
-        email: 'sarah@example.com',
-        role: 'Customer',
-        status: 'active',
-        joined: '2023-05-15',
-        orders: 5,
-        spent: 4500,
-        avatar: '',
-        location: 'London, UK'
-    },
-    {
-        id: 3,
-        name: 'Mike Brown',
-        email: 'mike@example.com',
-        role: 'Customer',
-        status: 'blocked',
-        joined: '2023-08-20',
-        orders: 0,
-        spent: 0,
-        avatar: '',
-        location: 'Toronto, Canada'
-    },
-    {
-        id: 4,
-        name: 'Emily Davis',
-        email: 'emily@example.com',
-        role: 'Customer',
-        status: 'active',
-        joined: '2023-11-10',
-        orders: 3,
-        spent: 1200,
-        avatar: '',
-        location: 'Sydney, Australia'
-    },
-    {
-        id: 5,
-        name: 'David Wilson',
-        email: 'david@example.com',
-        role: 'Moderator',
-        status: 'active',
-        joined: '2023-03-22',
-        orders: 8,
-        spent: 8900,
-        avatar: '',
-        location: 'Berlin, Germany'
-    },
-];
+interface UserData {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    status: string;
+    joined: Date;
+    avatar?: string;
+    location?: string;
+    ordersCount?: number;
+    totalSpent?: number;
+}
 
 export default function UsersPage() {
-    const [searchQuery, setSearchQuery] = useState('');
-    const [roleFilter, setRoleFilter] = useState('all');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [users, setUsers] = useState<UserData[]>([]);
+    const [loading, setLoading] = useState(true);
 
-    const filteredUsers = MOCK_USERS.filter(user => {
-        const matchesSearch =
-            user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            user.email.toLowerCase().includes(searchQuery.toLowerCase());
-        const matchesRole = roleFilter === 'all' || user.role.toLowerCase() === roleFilter;
-        return matchesSearch && matchesRole;
-    });
+    useEffect(() => {
+        // Real-time subscription to users collection
+        const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
 
-    const getStatusBadge = (status: string) => {
-        switch (status) {
-            case 'active':
-                return <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Active</Badge>;
-            case 'blocked':
-                return <Badge className="bg-red-100 text-red-700 hover:bg-red-100">Blocked</Badge>;
-            case 'inactive':
-                return <Badge className="bg-gray-100 text-gray-700 hover:bg-gray-100">Inactive</Badge>;
-            default:
-                return <Badge>{status}</Badge>;
-        }
-    };
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const fetchedUsers = snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    name: data.displayName || data.name || 'Unknown User',
+                    email: data.email || 'No Email',
+                    role: data.role || 'customer', // default to customer
+                    status: data.status || 'active',
+                    joined: data.createdAt?.toDate() || new Date(),
+                    avatar: data.photoURL || '',
+                    location: data.address?.city ? `${data.address.city}, ${data.address.country}` : 'Unknown',
+                    ordersCount: data.stats?.ordersCount || 0, // Assuming we sync these stats later
+                    totalSpent: data.stats?.totalSpent || 0
+                };
+            });
+            setUsers(fetchedUsers);
+            setLoading(false);
+        }, (error) => {
+            console.error("Error fetching users:", error);
+            // Don't show toast on every error to avoid spam if permission denied initially
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, []);
+
+    const filteredUsers = users.filter(user =>
+        user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.email.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center min-h-[400px]">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">
@@ -125,163 +103,110 @@ export default function UsersPage() {
                     <h1 className="text-3xl font-bold">Users</h1>
                     <p className="text-gray-500 mt-1">Manage customer accounts and permissions</p>
                 </div>
-                <Button className="bg-blue-600 hover:bg-blue-700">
-                    <User className="w-4 h-4 mr-2" />
-                    Add New User
-                </Button>
-            </div>
-
-            {/* Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card className="p-4 flex items-center justify-between">
-                    <div>
-                        <p className="text-sm text-gray-500">Total Users</p>
-                        <p className="text-2xl font-bold">{MOCK_USERS.length}</p>
-                    </div>
-                    <User className="w-8 h-8 text-blue-600" />
-                </Card>
-                <Card className="p-4 flex items-center justify-between">
-                    <div>
-                        <p className="text-sm text-gray-500">Active Customers</p>
-                        <p className="text-2xl font-bold text-green-600">
-                            {MOCK_USERS.filter(u => u.status === 'active').length}
-                        </p>
-                    </div>
-                    <CheckCircle className="w-8 h-8 text-green-600" />
-                </Card>
-                <Card className="p-4 flex items-center justify-between">
-                    <div>
-                        <p className="text-sm text-gray-500">Blocked/Inactive</p>
-                        <p className="text-2xl font-bold text-red-600">
-                            {MOCK_USERS.filter(u => u.status !== 'active').length}
-                        </p>
-                    </div>
-                    <Ban className="w-8 h-8 text-red-600" />
-                </Card>
-            </div>
-
-            {/* Filters */}
-            <Card className="p-6">
-                <div className="flex flex-col md:flex-row gap-4">
-                    <div className="flex-1 relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                        <Input
-                            placeholder="Search users by name or email..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="pl-10"
-                        />
-                    </div>
-                    <select
-                        value={roleFilter}
-                        onChange={(e) => setRoleFilter(e.target.value)}
-                        className="px-4 py-2 border rounded-lg"
-                    >
-                        <option value="all">All Roles</option>
-                        <option value="admin">Admin</option>
-                        <option value="customer">Customer</option>
-                        <option value="moderator">Moderator</option>
-                    </select>
-                    <Button variant="outline">
-                        <Filter className="w-4 h-4 mr-2" />
-                        Filters
-                    </Button>
+                <div className="flex gap-2">
                     <Button variant="outline">
                         <Download className="w-4 h-4 mr-2" />
                         Export
                     </Button>
+                    <Button className="bg-blue-600 hover:bg-blue-700">
+                        <User className="w-4 h-4 mr-2" />
+                        Add User
+                    </Button>
                 </div>
-            </Card>
+            </div>
 
-            {/* Users Table */}
-            <Card>
-                <div className="overflow-x-auto">
-                    <table className="w-full">
-                        <thead className="bg-gray-50 border-b">
-                            <tr>
-                                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">User</th>
-                                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Role</th>
-                                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Status</th>
-                                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Location</th>
-                                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Joined</th>
-                                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Orders</th>
-                                <th className="px-6 py-4 text-right text-sm font-semibold text-gray-900">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y">
-                            {filteredUsers.map((user) => (
-                                <tr key={user.id} className="hover:bg-gray-50 transition-colors">
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center gap-3">
-                                            <Avatar>
-                                                <AvatarImage src={user.avatar} />
-                                                <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
-                                            </Avatar>
-                                            <div>
-                                                <div className="font-medium text-gray-900">{user.name}</div>
-                                                <div className="text-xs text-gray-500">{user.email}</div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <Badge variant="outline" className="font-normal capitalize">
-                                            {user.role}
-                                        </Badge>
-                                    </td>
-                                    <td className="px-6 py-4">{getStatusBadge(user.status)}</td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                                            <MapPin className="w-3 h-3" />
-                                            {user.location}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 text-sm text-gray-600">{user.joined}</td>
-                                    <td className="px-6 py-4">
-                                        <div className="text-sm">
-                                            <span className="font-semibold">{user.orders}</span> orders
-                                            <br />
-                                            <span className="text-xs text-gray-500">Total: ${user.spent.toLocaleString()}</span>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 text-right">
-                                        <DropdownMenu>
-                                            <DropdownMenuTrigger asChild>
-                                                <Button variant="ghost" size="sm">
-                                                    <MoreVertical className="w-4 h-4" />
-                                                </Button>
-                                            </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="end">
-                                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                                <DropdownMenuItem>
-                                                    <User className="w-4 h-4 mr-2" /> View Profile
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem>
-                                                    <Mail className="w-4 h-4 mr-2" /> Send Email
-                                                </DropdownMenuItem>
-                                                <DropdownMenuSeparator />
-                                                <DropdownMenuItem className="text-red-600">
-                                                    <Ban className="w-4 h-4 mr-2" /> Block User
-                                                </DropdownMenuItem>
-                                            </DropdownMenuContent>
-                                        </DropdownMenu>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* Pagination */}
-                <div className="px-6 py-4 border-t flex items-center justify-between">
-                    <p className="text-sm text-gray-500">
-                        Showing {filteredUsers.length} of {MOCK_USERS.length} users
-                    </p>
-                    <div className="flex gap-2">
-                        <Button variant="outline" size="sm">Previous</Button>
-                        <Button variant="outline" size="sm">Next</Button>
+            {/* Filters */}
+            <Card className="p-4">
+                <div className="flex flex-col md:flex-row gap-4 items-center">
+                    <div className="relative flex-1 w-full">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <Input
+                            placeholder="Search users by name, email..."
+                            className="pl-9"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
                     </div>
+                    <Button variant="outline">
+                        <Filter className="w-4 h-4 mr-2" />
+                        Filters
+                    </Button>
                 </div>
             </Card>
+
+            {/* Users List */}
+            <div className="space-y-4">
+                {filteredUsers.length === 0 ? (
+                    <div className="text-center py-10 text-gray-500">No users found.</div>
+                ) : filteredUsers.map((user) => (
+                    <Card key={user.id} className="p-4 hover:shadow-md transition-all duration-200">
+                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                            {/* User Info */}
+                            <div className="flex items-center gap-4 min-w-[250px]">
+                                <Avatar className="h-10 w-10">
+                                    <AvatarImage src={user.avatar} />
+                                    <AvatarFallback>{user.name.charAt(0).toUpperCase()}</AvatarFallback>
+                                </Avatar>
+                                <div>
+                                    <h3 className="font-semibold text-gray-900">{user.name}</h3>
+                                    <div className="flex items-center text-sm text-gray-500 gap-2">
+                                        <Mail className="w-3 h-3" />
+                                        {user.email}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Role & Status */}
+                            <div className="flex items-center gap-4 min-w-[200px]">
+                                <Badge variant="outline" className={`capitalize ${user.role === 'admin' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-gray-50 text-gray-700 border-gray-200'
+                                    }`}>
+                                    {user.role}
+                                </Badge>
+                                <Badge className={`capitalize ${user.status === 'active' ? 'bg-green-100 text-green-700 hover:bg-green-100' : 'bg-red-100 text-red-700 hover:bg-red-100'
+                                    }`}>
+                                    {user.status === 'active' ? <CheckCircle className="w-3 h-3 mr-1" /> : <Ban className="w-3 h-3 mr-1" />}
+                                    {user.status}
+                                </Badge>
+                            </div>
+
+                            {/* Details */}
+                            <div className="flex items-center gap-6 text-sm text-gray-500 min-w-[250px]">
+                                <div className="flex items-center gap-2" title="Location">
+                                    <MapPin className="w-4 h-4" />
+                                    <span className="truncate max-w-[100px]">{user.location}</span>
+                                </div>
+                                <div className="flex items-center gap-2" title="Joined Date">
+                                    <Calendar className="w-4 h-4" />
+                                    <span>{user.joined.toLocaleDateString()}</span>
+                                </div>
+                            </div>
+
+                            {/* Stats */}
+                            <div className="flex flex-col items-end min-w-[100px] gap-1">
+                                <span className="font-bold text-gray-900">${(user.totalSpent || 0).toLocaleString()}</span>
+                                <span className="text-xs text-gray-500">{user.ordersCount || 0} orders</span>
+                            </div>
+
+                            {/* Actions */}
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon">
+                                        <MoreVertical className="w-4 h-4" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem>View Profile</DropdownMenuItem>
+                                    <DropdownMenuItem>Edit Details</DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem className="text-red-600">Suspend User</DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </div>
+                    </Card>
+                ))}
+            </div>
         </div>
     );
 }

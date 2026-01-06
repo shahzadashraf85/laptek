@@ -1,10 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { db } from '@/lib/firebase';
+import { collection, onSnapshot, query, orderBy, Timestamp } from 'firebase/firestore';
 import {
     Search,
     Filter,
@@ -15,24 +17,64 @@ import {
     Clock,
     Package,
     DollarSign,
-    TrendingUp
+    TrendingUp,
+    Loader2
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 
-const MOCK_ORDERS = [
-    { id: 'ORD-2024-001', customer: 'John Doe', email: 'john@example.com', product: 'MacBook Pro 16"', amount: 3499, status: 'completed', date: '2024-01-05', items: 1 },
-    { id: 'ORD-2024-002', customer: 'Jane Smith', email: 'jane@example.com', product: 'iPhone 15 Pro', amount: 1199, status: 'processing', date: '2024-01-05', items: 1 },
-    { id: 'ORD-2024-003', customer: 'Bob Johnson', email: 'bob@example.com', product: 'Dell XPS 13', amount: 1499, status: 'pending', date: '2024-01-04', items: 1 },
-    { id: 'ORD-2024-004', customer: 'Alice Brown', email: 'alice@example.com', product: 'iPad Pro + Accessories', amount: 1547, status: 'completed', date: '2024-01-04', items: 3 },
-    { id: 'ORD-2024-005', customer: 'Charlie Wilson', email: 'charlie@example.com', product: 'Gaming Desktop', amount: 4500, status: 'processing', date: '2024-01-03', items: 1 },
-    { id: 'ORD-2024-006', customer: 'Diana Martinez', email: 'diana@example.com', product: 'Sony Headphones', amount: 348, status: 'cancelled', date: '2024-01-03', items: 1 },
-];
+interface Order {
+    id: string; // Document ID
+    orderNumber: string; // Readable ID e.g. ORD-001
+    customer: string;
+    email: string;
+    product: string; // Summary of main product or first item
+    amount: number;
+    status: string;
+    date: Date;
+    itemsCount: number;
+}
 
 export default function OrdersPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
+    const [orders, setOrders] = useState<Order[]>([]);
+    const [loading, setLoading] = useState(true);
 
-    const filteredOrders = MOCK_ORDERS.filter(order => {
+    useEffect(() => {
+        const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const fetchedOrders = snapshot.docs.map(doc => {
+                const data = doc.data();
+                const items = data.items || [];
+                const firstItem = items.length > 0 ? items[0] : { name: 'Unknown Item' };
+                const productSummary = items.length > 1 ? `${firstItem.name} + ${items.length - 1} more` : firstItem.name;
+
+                return {
+                    id: doc.id,
+                    orderNumber: data.orderNumber || doc.id.substring(0, 8),
+                    customer: data.customerName || 'Guest',
+                    email: data.customerEmail || 'No Email',
+                    product: productSummary,
+                    amount: data.pricing?.total || 0,
+                    status: data.status || 'pending',
+                    date: data.createdAt?.toDate() || new Date(),
+                    itemsCount: items.length
+                };
+            });
+            setOrders(fetchedOrders);
+            setLoading(false);
+        }, (error) => {
+            console.error("Error fetching orders:", error);
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, []);
+
+    const filteredOrders = orders.filter(order => {
         const matchesSearch =
+            order.orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
             order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
             order.customer.toLowerCase().includes(searchQuery.toLowerCase()) ||
             order.email.toLowerCase().includes(searchQuery.toLowerCase());
@@ -41,7 +83,7 @@ export default function OrdersPage() {
     });
 
     const getStatusBadge = (status: string) => {
-        const config = {
+        const config: any = {
             completed: { icon: CheckCircle, className: 'bg-green-100 text-green-700', label: 'Completed' },
             processing: { icon: Clock, className: 'bg-blue-100 text-blue-700', label: 'Processing' },
             pending: { icon: Clock, className: 'bg-yellow-100 text-yellow-700', label: 'Pending' },
@@ -57,9 +99,18 @@ export default function OrdersPage() {
         );
     };
 
-    const totalRevenue = MOCK_ORDERS.filter(o => o.status === 'completed').reduce((sum, o) => sum + o.amount, 0);
-    const completedOrders = MOCK_ORDERS.filter(o => o.status === 'completed').length;
-    const pendingOrders = MOCK_ORDERS.filter(o => o.status === 'pending' || o.status === 'processing').length;
+    // Calculate real-time stats from fetched orders
+    const totalRevenue = orders.filter(o => o.status === 'completed').reduce((sum, o) => sum + o.amount, 0);
+    const completedOrders = orders.filter(o => o.status === 'completed').length;
+    const pendingOrders = orders.filter(o => o.status === 'pending' || o.status === 'processing').length;
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center min-h-[400px]">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">
@@ -75,7 +126,7 @@ export default function OrdersPage() {
                     <div className="flex items-center justify-between">
                         <div>
                             <p className="text-sm text-gray-500">Total Orders</p>
-                            <p className="text-2xl font-bold mt-1">{MOCK_ORDERS.length}</p>
+                            <p className="text-2xl font-bold mt-1">{orders.length}</p>
                         </div>
                         <Package className="w-8 h-8 text-blue-600" />
                     </div>
@@ -124,7 +175,7 @@ export default function OrdersPage() {
                     <select
                         value={statusFilter}
                         onChange={(e) => setStatusFilter(e.target.value)}
-                        className="px-4 py-2 border rounded-lg"
+                        className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-600 focus:outline-none"
                     >
                         <option value="all">All Status</option>
                         <option value="completed">Completed</option>
@@ -159,40 +210,48 @@ export default function OrdersPage() {
                             </tr>
                         </thead>
                         <tbody className="divide-y">
-                            {filteredOrders.map((order) => (
-                                <tr key={order.id} className="hover:bg-gray-50 transition-colors">
-                                    <td className="px-6 py-4">
-                                        <div className="font-medium text-blue-600">{order.id}</div>
-                                        <div className="text-xs text-gray-500">{order.items} item(s)</div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <div className="font-medium text-gray-900">{order.customer}</div>
-                                        <div className="text-sm text-gray-500">{order.email}</div>
-                                    </td>
-                                    <td className="px-6 py-4 text-sm text-gray-600">{order.product}</td>
-                                    <td className="px-6 py-4 text-sm text-gray-600">{order.date}</td>
-                                    <td className="px-6 py-4 text-sm font-semibold">${order.amount.toLocaleString()}</td>
-                                    <td className="px-6 py-4">{getStatusBadge(order.status)}</td>
-                                    <td className="px-6 py-4 text-right">
-                                        <Button variant="ghost" size="sm">
-                                            <Eye className="w-4 h-4 mr-2" />
-                                            View
-                                        </Button>
+                            {filteredOrders.length === 0 ? (
+                                <tr>
+                                    <td colSpan={7} className="text-center py-8 text-gray-500">
+                                        No orders found.
                                     </td>
                                 </tr>
-                            ))}
+                            ) : (
+                                filteredOrders.map((order) => (
+                                    <tr key={order.id} className="hover:bg-gray-50 transition-colors">
+                                        <td className="px-6 py-4">
+                                            <div className="font-medium text-blue-600">{order.orderNumber}</div>
+                                            <div className="text-xs text-gray-500">{order.itemsCount} item(s)</div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="font-medium text-gray-900">{order.customer}</div>
+                                            <div className="text-sm text-gray-500">{order.email}</div>
+                                        </td>
+                                        <td className="px-6 py-4 text-sm text-gray-600 truncate max-w-[200px]" title={order.product}>{order.product}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-600">{order.date.toLocaleDateString()}</td>
+                                        <td className="px-6 py-4 text-sm font-semibold">${order.amount.toLocaleString()}</td>
+                                        <td className="px-6 py-4">{getStatusBadge(order.status)}</td>
+                                        <td className="px-6 py-4 text-right">
+                                            <Button variant="ghost" size="sm">
+                                                <Eye className="w-4 h-4 mr-2" />
+                                                View
+                                            </Button>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
                         </tbody>
                     </table>
                 </div>
 
-                {/* Pagination */}
+                {/* Pagination (Simplified for now) */}
                 <div className="px-6 py-4 border-t flex items-center justify-between">
                     <p className="text-sm text-gray-500">
-                        Showing {filteredOrders.length} of {MOCK_ORDERS.length} orders
+                        Showing {filteredOrders.length} orders
                     </p>
                     <div className="flex gap-2">
-                        <Button variant="outline" size="sm">Previous</Button>
-                        <Button variant="outline" size="sm">Next</Button>
+                        <Button variant="outline" size="sm" disabled>Previous</Button>
+                        <Button variant="outline" size="sm" disabled>Next</Button>
                     </div>
                 </div>
             </Card>

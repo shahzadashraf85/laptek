@@ -1,7 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { db } from '@/lib/firebase';
+import { collection, query, orderBy, limit, getDocs, getCountFromServer, where } from 'firebase/firestore';
 import {
     DollarSign,
     ShoppingCart,
@@ -12,257 +15,223 @@ import {
     ArrowUpRight,
     ArrowDownRight,
     Eye,
-    Clock
+    Clock,
+    Loader2
 } from 'lucide-react';
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
-const salesData = [
-    { name: 'Mon', sales: 4000, orders: 24 },
-    { name: 'Tue', sales: 3000, orders: 18 },
-    { name: 'Wed', sales: 5000, orders: 32 },
-    { name: 'Thu', sales: 2780, orders: 20 },
-    { name: 'Fri', sales: 6890, orders: 45 },
-    { name: 'Sat', sales: 8390, orders: 52 },
-    { name: 'Sun', sales: 7490, orders: 48 },
-];
+interface DashboardStats {
+    totalRevenue: number;
+    totalOrders: number;
+    totalUsers: number;
+    totalProducts: number;
+}
 
-const categoryData = [
-    { name: 'Laptops', value: 45, color: '#3b82f6' },
-    { name: 'Phones', value: 30, color: '#8b5cf6' },
-    { name: 'Desktops', value: 15, color: '#10b981' },
-    { name: 'Accessories', value: 10, color: '#f59e0b' },
-];
-
-const topProducts = [
-    { name: 'MacBook Pro 16"', sales: 145, revenue: 507855, trend: 12 },
-    { name: 'iPhone 15 Pro Max', sales: 98, revenue: 117402, trend: 8 },
-    { name: 'Dell XPS 13', sales: 76, revenue: 113924, trend: -3 },
-    { name: 'Gaming Desktop RTX 4090', sales: 34, revenue: 153000, trend: 15 },
-];
-
-const recentOrders = [
-    { id: '#ORD-2024-001', customer: 'John Doe', product: 'MacBook Pro', amount: 3499, status: 'completed' },
-    { id: '#ORD-2024-002', customer: 'Jane Smith', product: 'iPhone 15', amount: 1199, status: 'processing' },
-    { id: '#ORD-2024-003', customer: 'Bob Johnson', product: 'Dell XPS', amount: 1499, status: 'pending' },
-    { id: '#ORD-2024-004', customer: 'Alice Brown', product: 'iPad Pro', amount: 1099, status: 'completed' },
-];
-
-type StatCardProps = {
-    title: string;
-    value: string;
-    change: number;
-    icon: React.ReactNode;
-    color: string;
-};
-
-function StatCard({ title, value, change, icon, color }: StatCardProps) {
-    const isPositive = change >= 0;
-
-    return (
-        <Card className="p-6 hover:shadow-lg transition-shadow">
-            <div className="flex items-center justify-between">
-                <div>
-                    <p className="text-sm font-medium text-gray-500 mb-1">{title}</p>
-                    <h3 className="text-3xl font-bold">{value}</h3>
-                    <div className={`flex items-center gap-1 mt-2 text-sm ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
-                        {isPositive ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
-                        <span className="font-medium">{Math.abs(change)}%</span>
-                        <span className="text-gray-500">vs last week</span>
-                    </div>
-                </div>
-                <div className={`p-4 rounded-2xl ${color}`}>
-                    {icon}
-                </div>
-            </div>
-        </Card>
-    );
+interface RecentOrder {
+    id: string;
+    customer: string;
+    product: string;
+    amount: number;
+    status: string;
 }
 
 export default function AdminDashboard() {
+    const [stats, setStats] = useState<DashboardStats>({
+        totalRevenue: 0,
+        totalOrders: 0,
+        totalUsers: 0,
+        totalProducts: 0
+    });
+    const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        async function fetchDashboardData() {
+            try {
+                // 1. Get Counts (Efficient)
+                const productsCount = await getCountFromServer(query(collection(db, 'products'), where('status', '==', 'active')));
+                const usersCount = await getCountFromServer(collection(db, 'users'));
+                const ordersCount = await getCountFromServer(collection(db, 'orders'));
+
+                // 2. Calculate Revenue & Get Recent Orders
+                // Ideally this should be a cloud function or cached stat document. 
+                // For now, we fetch last 50 orders to estimate revenue and get recent list.
+                const ordersQ = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(50));
+                const ordersSnap = await getDocs(ordersQ);
+
+                let revenue = 0;
+                const recent: RecentOrder[] = [];
+
+                ordersSnap.docs.forEach((doc, index) => {
+                    const data = doc.data();
+                    if (data.status === 'completed' || data.status === 'paid') {
+                        revenue += data.pricing?.total || 0;
+                    }
+
+                    if (index < 5) {
+                        const items = data.items || [];
+                        const firstItem = items[0] || { name: 'Unknown' };
+                        recent.push({
+                            id: data.orderNumber || doc.id.substring(0, 8),
+                            customer: data.customerName || 'Guest',
+                            product: items.length > 1 ? `${firstItem.name} +${items.length - 1}` : firstItem.name,
+                            amount: data.pricing?.total || 0,
+                            status: data.status || 'pending'
+                        });
+                    }
+                });
+
+                setStats({
+                    totalRevenue: revenue, // Note: This is only last 50 orders revenue for performance
+                    totalOrders: ordersCount.data().count,
+                    totalUsers: usersCount.data().count,
+                    totalProducts: productsCount.data().count
+                });
+                setRecentOrders(recent);
+
+            } catch (error) {
+                console.error("Dashboard fetch error:", error);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        fetchDashboardData();
+    }, []);
+
+    if (loading) {
+        return <div className="flex h-96 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-blue-600" /></div>;
+    }
+
     return (
-        <div className="space-y-8">
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="space-y-6">
+            <div>
+                <h1 className="text-3xl font-bold">Dashboard</h1>
+                <p className="text-gray-500 mt-1">Overview of your store's performance</p>
+            </div>
+
+            {/* Key Metrics */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatCard
                     title="Total Revenue"
-                    value="$892,453"
-                    change={12.5}
+                    value={`$${stats.totalRevenue.toLocaleString()}`}
+                    change={0}
                     icon={<DollarSign className="w-6 h-6 text-white" />}
-                    color="bg-gradient-to-br from-blue-500 to-blue-600"
+                    color="bg-blue-600"
                 />
                 <StatCard
                     title="Total Orders"
-                    value="1,247"
-                    change={8.2}
+                    value={stats.totalOrders.toString()}
+                    change={0}
                     icon={<ShoppingCart className="w-6 h-6 text-white" />}
-                    color="bg-gradient-to-br from-purple-500 to-purple-600"
+                    color="bg-purple-600"
                 />
                 <StatCard
                     title="Active Users"
-                    value="12,458"
-                    change={-2.4}
+                    value={stats.totalUsers.toString()}
+                    change={0}
                     icon={<Users className="w-6 h-6 text-white" />}
-                    color="bg-gradient-to-br from-green-500 to-green-600"
+                    color="bg-orange-500"
                 />
                 <StatCard
                     title="Products"
-                    value="487"
-                    change={5.1}
+                    value={stats.totalProducts.toString()}
+                    change={0}
                     icon={<Package className="w-6 h-6 text-white" />}
-                    color="bg-gradient-to-br from-orange-500 to-orange-600"
+                    color="bg-green-500"
                 />
             </div>
 
-            {/* Charts Row */}
+            {/* Content Area */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Revenue Chart */}
-                <Card className="p-6 lg:col-span-2">
-                    <div className="flex items-center justify-between mb-6">
-                        <div>
-                            <h3 className="text-lg font-bold">Revenue Overview</h3>
-                            <p className="text-sm text-gray-500">Last 7 days performance</p>
-                        </div>
-                        <select className="px-3 py-2 border rounded-lg text-sm">
-                            <option>Last 7 days</option>
-                            <option>Last 30 days</option>
-                            <option>Last 90 days</option>
-                        </select>
-                    </div>
-                    <ResponsiveContainer width="100%" height={300}>
-                        <AreaChart data={salesData}>
-                            <defs>
-                                <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                                </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                            <XAxis dataKey="name" stroke="#888" />
-                            <YAxis stroke="#888" />
-                            <Tooltip
-                                contentStyle={{
-                                    backgroundColor: 'white',
-                                    border: '1px solid #e5e7eb',
-                                    borderRadius: '8px'
-                                }}
-                            />
-                            <Area
-                                type="monotone"
-                                dataKey="sales"
-                                stroke="#3b82f6"
-                                strokeWidth={2}
-                                fill="url(#colorSales)"
-                            />
-                        </AreaChart>
-                    </ResponsiveContainer>
-                </Card>
-
-                {/* Category Distribution */}
-                <Card className="p-6">
-                    <h3 className="text-lg font-bold mb-6">Sales by Category</h3>
-                    <ResponsiveContainer width="100%" height={300}>
-                        <PieChart>
-                            <Pie
-                                data={categoryData}
-                                cx="50%"
-                                cy="50%"
-                                innerRadius={60}
-                                outerRadius={100}
-                                paddingAngle={5}
-                                dataKey="value"
-                            >
-                                {categoryData.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={entry.color} />
-                                ))}
-                            </Pie>
-                            <Tooltip />
-                        </PieChart>
-                    </ResponsiveContainer>
-                    <div className="mt-4 space-y-2">
-                        {categoryData.map((cat, i) => (
-                            <div key={i} className="flex items-center justify-between text-sm">
-                                <div className="flex items-center gap-2">
-                                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color }} />
-                                    <span>{cat.name}</span>
-                                </div>
-                                <span className="font-semibold">{cat.value}%</span>
-                            </div>
-                        ))}
-                    </div>
-                </Card>
-            </div>
-
-            {/* Top Products & Recent Orders */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Top Products */}
-                <Card className="p-6">
-                    <h3 className="text-lg font-bold mb-6">Top Selling Products</h3>
-                    <div className="space-y-4">
-                        {topProducts.map((product, i) => (
-                            <div key={i} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                                <div className="flex-1">
-                                    <p className="font-semibold">{product.name}</p>
-                                    <p className="text-sm text-gray-500">{product.sales} units sold</p>
-                                </div>
-                                <div className="text-right">
-                                    <p className="font-bold text-blue-600">${product.revenue.toLocaleString()}</p>
-                                    <div className={`flex items-center gap-1 text-sm ${product.trend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                        {product.trend >= 0 ? <TrendingUp className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                                        <span>{Math.abs(product.trend)}%</span>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </Card>
-
                 {/* Recent Orders */}
+                <Card className="lg:col-span-2 p-6">
+                    <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-lg font-bold">Recent Orders</h3>
+                        <Button variant="outline" size="sm">View All</Button>
+                    </div>
+                    {recentOrders.length === 0 ? (
+                        <div className="text-center py-10 text-gray-500">No orders yet.</div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full">
+                                <thead>
+                                    <tr className="text-left text-sm text-gray-500 border-b">
+                                        <th className="pb-3 font-medium">Order ID</th>
+                                        <th className="pb-3 font-medium">Customer</th>
+                                        <th className="pb-3 font-medium">Product</th>
+                                        <th className="pb-3 font-medium">Amount</th>
+                                        <th className="pb-3 font-medium">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="text-sm">
+                                    {recentOrders.map((order) => (
+                                        <tr key={order.id} className="border-b last:border-0 hover:bg-gray-50">
+                                            <td className="py-4 font-medium text-blue-600">{order.id}</td>
+                                            <td className="py-4">{order.customer}</td>
+                                            <td className="py-4 text-gray-500">{order.product}</td>
+                                            <td className="py-4 font-medium">${order.amount.toLocaleString()}</td>
+                                            <td className="py-4">
+                                                <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize 
+                                                    ${order.status === 'completed' ? 'bg-green-100 text-green-700' :
+                                                        order.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                                                            'bg-gray-100 text-gray-700'}`}>
+                                                    {order.status}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </Card>
+
+                {/* Quick Stats / Top Products Placeholder */}
                 <Card className="p-6">
-                    <h3 className="text-lg font-bold mb-6">Recent Orders</h3>
+                    <h3 className="text-lg font-bold mb-4">Store Health</h3>
                     <div className="space-y-4">
-                        {recentOrders.map((order, i) => (
-                            <div key={i} className="flex items-center justify-between p-4 border rounded-lg hover:border-blue-500 transition-colors">
-                                <div className="flex-1">
-                                    <p className="font-semibold text-sm">{order.id}</p>
-                                    <p className="text-sm text-gray-500">{order.customer} • {order.product}</p>
-                                </div>
-                                <div className="text-right">
-                                    <p className="font-bold">${order.amount}</p>
-                                    <span className={`inline-block px-2 py-1 text-xs rounded-full ${order.status === 'completed' ? 'bg-green-100 text-green-700' :
-                                            order.status === 'processing' ? 'bg-blue-100 text-blue-700' :
-                                                'bg-yellow-100 text-yellow-700'
-                                        }`}>
-                                        {order.status}
-                                    </span>
+                        <div className="p-4 bg-green-50 rounded-lg border border-green-100">
+                            <div className="flex items-center gap-3">
+                                <CheckCircle className="w-5 h-5 text-green-600" />
+                                <div>
+                                    <p className="font-semibold text-green-900">System Operational</p>
+                                    <p className="text-sm text-green-700">All services running smoothly</p>
                                 </div>
                             </div>
-                        ))}
+                        </div>
+                        <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+                            <div className="flex items-center gap-3">
+                                <Clock className="w-5 h-5 text-blue-600" />
+                                <div>
+                                    <p className="font-semibold text-blue-900">Sync Status</p>
+                                    <p className="text-sm text-blue-700">Database connected</p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </Card>
             </div>
-
-            {/* Quick Actions */}
-            <Card className="p-6">
-                <h3 className="text-lg font-bold mb-4">Quick Actions</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <button className="p-4 border-2 border-dashed rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-center">
-                        <Package className="w-6 h-6 mx-auto mb-2 text-blue-600" />
-                        <p className="text-sm font-medium">Add Product</p>
-                    </button>
-                    <button className="p-4 border-2 border-dashed rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-colors text-center">
-                        <Eye className="w-6 h-6 mx-auto mb-2 text-purple-600" />
-                        <p className="text-sm font-medium">View Orders</p>
-                    </button>
-                    <button className="p-4 border-2 border-dashed rounded-lg hover:border-green-500 hover:bg-green-50 transition-colors text-center">
-                        <Users className="w-6 h-6 mx-auto mb-2 text-green-600" />
-                        <p className="text-sm font-medium">Manage Users</p>
-                    </button>
-                    <button className="p-4 border-2 border-dashed rounded-lg hover:border-orange-500 hover:bg-orange-50 transition-colors text-center">
-                        <AlertCircle className="w-6 h-6 mx-auto mb-2 text-orange-600" />
-                        <p className="text-sm font-medium">View Reports</p>
-                    </button>
-                </div>
-            </Card>
         </div>
+    );
+}
+
+function CheckCircle({ className }: { className?: string }) {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
+    )
+}
+
+function StatCard({ title, value, change, icon, color }: any) {
+    return (
+        <Card className="p-4 flex items-center justify-between hover:shadow-md transition-shadow">
+            <div>
+                <p className="text-sm text-gray-500 font-medium">{title}</p>
+                <h3 className="text-2xl font-bold mt-1 text-gray-900">{value}</h3>
+            </div>
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-sm ${color}`}>
+                {icon}
+            </div>
+        </Card>
     );
 }

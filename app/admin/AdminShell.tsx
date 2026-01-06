@@ -55,12 +55,19 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
                 // Check if user has admin role in Firestore
                 try {
                     // Check 'user' (singular) first
-                    let userDoc = await getDoc(doc(db, "user", user.uid));
+                    // Check 'users' (plural) collection which matches our schema and security rules
+                    let userDoc = await getDoc(doc(db, "users", user.uid));
 
-                    // Fallback to 'users' (plural) if singular doesn't exist
+                    // Fallback to 'user' (singular) only if needed, but wrap in try-catch to avoid permission errors breaking the flow
                     if (!userDoc.exists()) {
-                        console.log("Checking 'users' plural collection...");
-                        userDoc = await getDoc(doc(db, "users", user.uid));
+                        try {
+                            const singularDoc = await getDoc(doc(db, "user", user.uid));
+                            if (singularDoc.exists()) {
+                                userDoc = singularDoc;
+                            }
+                        } catch (e) {
+                            console.warn("Could not read legacy 'user' collection", e);
+                        }
                     }
 
                     console.log("Admin Check - UID:", user.uid);
