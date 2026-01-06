@@ -46,3 +46,4 @@ firebase-debug.log*
 
 # temp
 .temp_ai_optimize_function.txt
+serviceAccountKey.json

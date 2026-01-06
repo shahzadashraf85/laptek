@@ -1,10 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { db } from '@/lib/firebase';
+import { collection, onSnapshot, query, orderBy, Timestamp } from 'firebase/firestore';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import toast from 'react-hot-toast';
 import {
     Search,
     Filter,
@@ -14,7 +17,8 @@ import {
     Printer,
     MoreVertical,
     ArrowUpRight,
-    ArrowDownLeft
+    ArrowDownLeft,
+    Loader2
 } from 'lucide-react';
 import {
     Tabs,
@@ -31,29 +35,74 @@ import {
     TableRow,
 } from "@/components/ui/table";
 
-const MOCK_INVOICES = [
-    { id: 'INV-001', date: '2024-01-05', customer: 'John Doe', amount: 1299.00, status: 'paid', type: 'sale' },
-    { id: 'INV-002', date: '2024-01-04', customer: 'TechDistro Inc', amount: 5000.00, status: 'pending', type: 'purchase' },
-    { id: 'INV-003', date: '2024-01-04', customer: 'Alice Brown', amount: 1547.00, status: 'paid', type: 'sale' },
-    { id: 'INV-004', date: '2024-01-03', customer: 'Office Depot', amount: 450.50, status: 'paid', type: 'purchase' },
-    { id: 'INV-005', date: '2024-01-02', customer: 'Charlie Wilson', amount: 3499.00, status: 'overdue', type: 'sale' },
-];
+interface Invoice {
+    id: string;
+    invoiceNumber: string;
+    date: Date;
+    type: 'sale' | 'purchase';
+    customerName?: string;
+    vendorName?: string;
+    total: number;
+    status: 'paid' | 'pending' | 'overdue' | 'cancelled';
+    items: any[];
+}
 
 export default function InvoicesPage() {
     const [searchTerm, setSearchTerm] = useState('');
+    const [invoices, setInvoices] = useState<Invoice[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        // Subscribe to real-time updates
+        const q = query(
+            collection(db, 'invoices'),
+            orderBy('createdAt', 'desc')
+        );
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const invoiceData = snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    invoiceNumber: data.invoiceNumber || '---',
+                    date: data.createdAt?.toDate() || new Date(),
+                    type: data.type || 'sale',
+                    customerName: data.customerName || 'Unknown',
+                    vendorName: data.vendorName || 'Unknown',
+                    total: data.total || 0,
+                    status: data.status || 'pending',
+                    items: data.items || []
+                } as Invoice;
+            });
+            setInvoices(invoiceData);
+            setLoading(false);
+        }, (error) => {
+            console.error("Error fetching invoices:", error);
+            toast.error("Failed to load invoices");
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, []);
 
     const getStatusBadge = (status: string) => {
-        const styles = {
+        const styles: Record<string, string> = {
             paid: 'bg-green-100 text-green-700',
             pending: 'bg-yellow-100 text-yellow-700',
-            overdue: 'bg-red-100 text-red-700'
+            overdue: 'bg-red-100 text-red-700',
+            cancelled: 'bg-gray-100 text-gray-700'
         };
         return (
-            <Badge className={`${styles[status as keyof typeof styles]} hover:${styles[status as keyof typeof styles]} capitalize`}>
+            <Badge className={`${styles[status] || 'bg-gray-100'} hover:${styles[status]} capitalize`}>
                 {status}
             </Badge>
         );
     };
+
+    const filteredInvoices = invoices.filter(inv =>
+        inv.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (inv.customerName && inv.customerName.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
 
     return (
         <div className="space-y-6">
@@ -100,50 +149,102 @@ export default function InvoicesPage() {
                     </div>
                 </div>
 
-                <Card>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Invoice #</TableHead>
-                                <TableHead>Date</TableHead>
-                                <TableHead>Type</TableHead>
-                                <TableHead>Customer/Vendor</TableHead>
-                                <TableHead>Amount</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead className="text-right">Actions</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {MOCK_INVOICES.map((inv) => (
-                                <TableRow key={inv.id}>
-                                    <TableCell className="font-mono font-medium">{inv.id}</TableCell>
-                                    <TableCell className="text-gray-500">{inv.date}</TableCell>
-                                    <TableCell>
-                                        <div className={`flex items-center text-xs font-semibold ${inv.type === 'sale' ? 'text-green-600' : 'text-red-600'
-                                            }`}>
-                                            {inv.type === 'sale' ? <ArrowUpRight className="w-3 h-3 mr-1" /> : <ArrowDownLeft className="w-3 h-3 mr-1" />}
-                                            {inv.type.toUpperCase()}
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="font-medium">{inv.customer}</TableCell>
-                                    <TableCell>${inv.amount.toLocaleString()}</TableCell>
-                                    <TableCell>{getStatusBadge(inv.status)}</TableCell>
-                                    <TableCell className="text-right">
-                                        <div className="flex justify-end gap-2">
-                                            <Button variant="ghost" size="icon">
-                                                <Printer className="w-4 h-4" />
-                                            </Button>
-                                            <Button variant="ghost" size="icon">
-                                                <MoreVertical className="w-4 h-4" />
-                                            </Button>
-                                        </div>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </Card>
+                <TabsContent value="all" className="mt-0">
+                    <InvoiceTable
+                        invoices={filteredInvoices}
+                        loading={loading}
+                        badgeRenderer={getStatusBadge}
+                    />
+                </TabsContent>
+                <TabsContent value="sales" className="mt-0">
+                    <InvoiceTable
+                        invoices={filteredInvoices.filter(i => i.type === 'sale')}
+                        loading={loading}
+                        badgeRenderer={getStatusBadge}
+                    />
+                </TabsContent>
+                <TabsContent value="purchases" className="mt-0">
+                    <InvoiceTable
+                        invoices={filteredInvoices.filter(i => i.type === 'purchase')}
+                        loading={loading}
+                        badgeRenderer={getStatusBadge}
+                    />
+                </TabsContent>
             </Tabs>
         </div>
+    );
+}
+
+function InvoiceTable({
+    invoices,
+    loading,
+    badgeRenderer
+}: {
+    invoices: Invoice[],
+    loading: boolean,
+    badgeRenderer: (s: string) => React.ReactNode
+}) {
+    if (loading) {
+        return (
+            <Card className="p-8 flex justify-center text-gray-500">
+                <Loader2 className="animate-spin w-8 h-8" />
+            </Card>
+        );
+    }
+
+    if (invoices.length === 0) {
+        return (
+            <Card className="p-8 text-center text-gray-500">
+                No invoices found.
+            </Card>
+        );
+    }
+
+    return (
+        <Card>
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead>Invoice #</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Customer/Vendor</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {invoices.map((inv) => (
+                        <TableRow key={inv.id}>
+                            <TableCell className="font-mono font-medium">{inv.invoiceNumber}</TableCell>
+                            <TableCell className="text-gray-500">{inv.date.toLocaleDateString()}</TableCell>
+                            <TableCell>
+                                <div className={`flex items-center text-xs font-semibold ${inv.type === 'sale' ? 'text-green-600' : 'text-red-600'
+                                    }`}>
+                                    {inv.type === 'sale' ? <ArrowUpRight className="w-3 h-3 mr-1" /> : <ArrowDownLeft className="w-3 h-3 mr-1" />}
+                                    {inv.type.toUpperCase()}
+                                </div>
+                            </TableCell>
+                            <TableCell className="font-medium">
+                                {inv.type === 'sale' ? inv.customerName : inv.vendorName}
+                            </TableCell>
+                            <TableCell>${inv.total.toLocaleString()}</TableCell>
+                            <TableCell>{badgeRenderer(inv.status)}</TableCell>
+                            <TableCell className="text-right">
+                                <div className="flex justify-end gap-2">
+                                    <Button variant="ghost" size="icon">
+                                        <Printer className="w-4 h-4" />
+                                    </Button>
+                                    <Button variant="ghost" size="icon">
+                                        <MoreVertical className="w-4 h-4" />
+                                    </Button>
+                                </div>
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                </TableBody>
+            </Table>
+        </Card>
     );
 }

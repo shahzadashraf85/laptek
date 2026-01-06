@@ -1,9 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { db } from '@/lib/firebase';
+import { collection, onSnapshot, query, orderBy, where, Timestamp } from 'firebase/firestore';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import toast from 'react-hot-toast';
 import {
     DollarSign,
     TrendingUp,
@@ -13,37 +16,128 @@ import {
     Download,
     Calendar,
     ArrowUpRight,
-    ArrowDownLeft
+    ArrowDownLeft,
+    Loader2
 } from 'lucide-react';
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/components/ui/table";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-const ACCOUNTS_DATA = [
-    { name: 'Jan', income: 4000, expense: 2400 },
-    { name: 'Feb', income: 3000, expense: 1398 },
-    { name: 'Mar', income: 2000, expense: 9800 },
-    { name: 'Apr', income: 2780, expense: 3908 },
-    { name: 'May', income: 1890, expense: 4800 },
-    { name: 'Jun', income: 2390, expense: 3800 },
-    { name: 'Jul', income: 3490, expense: 4300 },
-];
-
-const TRANSACTIONS = [
-    { id: 'TRX-9871', date: '2024-01-05', type: 'Credit', description: 'Product Sale - Invoice #INV-001', amount: 1299.00, status: 'completed' },
-    { id: 'TRX-9872', date: '2024-01-04', type: 'Debit', description: 'Office Supplies - Amazon', amount: 450.50, status: 'completed' },
-    { id: 'TRX-9873', date: '2024-01-04', type: 'Debit', description: 'Vendor Payment - TechDistro Inc', amount: 5000.00, status: 'processing' },
-    { id: 'TRX-9874', date: '2024-01-03', type: 'Credit', description: 'Service Refund', amount: 150.00, status: 'completed' },
-    { id: 'TRX-9875', date: '2024-01-02', type: 'Credit', description: 'Product Sale - Invoice #INV-005', amount: 3499.00, status: 'completed' },
-];
+interface Transaction {
+    id: string;
+    date: Date;
+    type: 'sale' | 'purchase';
+    description: string;
+    amount: number;
+    status: string;
+}
 
 export default function AccountsPage() {
+    const [transactions, setTransactions] = useState<Transaction[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [stats, setStats] = useState({
+        income: 0,
+        expense: 0,
+        profit: 0,
+        pending: 0
+    });
+    const [chartData, setChartData] = useState<any[]>([]);
+
+    useEffect(() => {
+        // Fetch invoices to derive accounting data
+        const q = query(
+            collection(db, 'invoices'),
+            orderBy('createdAt', 'desc')
+        );
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            let totalIncome = 0;
+            let totalExpense = 0;
+            let totalPending = 0;
+            const rawTransactions: Transaction[] = [];
+            const monthlyData: Record<string, { income: number; expense: number }> = {};
+
+            snapshot.docs.forEach(doc => {
+                const data = doc.data();
+                const amount = data.total || 0;
+                const type = data.type || 'sale'; // 'sale' (Income) or 'purchase' (Expense)
+                const date = data.createdAt?.toDate() || new Date();
+                const status = data.status || 'pending';
+
+                // Aggregate Totals
+                if (status !== 'cancelled') {
+                    if (type === 'sale') {
+                        totalIncome += amount;
+                    } else {
+                        totalExpense += amount;
+                    }
+
+                    if (status === 'pending') {
+                        totalPending += amount;
+                    }
+                }
+
+                // Prepare Transaction List
+                rawTransactions.push({
+                    id: doc.id,
+                    date: date,
+                    type: type,
+                    description: type === 'sale'
+                        ? `Invoice #${data.invoiceNumber || '---'} - ${data.customerName || 'Customer'}`
+                        : `Bill #${data.invoiceNumber || '---'} - ${data.vendorName || 'Vendor'}`,
+                    amount: amount,
+                    status: status
+                });
+
+                // Prepare Chart Data (Group by Month)
+                const monthKey = date.toLocaleString('default', { month: 'short' });
+                if (!monthlyData[monthKey]) {
+                    monthlyData[monthKey] = { income: 0, expense: 0 };
+                }
+                if (status !== 'cancelled') {
+                    if (type === 'sale') monthlyData[monthKey].income += amount;
+                    else monthlyData[monthKey].expense += amount;
+                }
+            });
+
+            // Format Chart Data
+            const formattedChartData = Object.keys(monthlyData).map(key => ({
+                name: key,
+                income: monthlyData[key].income,
+                expense: monthlyData[key].expense
+            }));
+
+            // If no data, provide placeholder for chart
+            if (formattedChartData.length === 0) {
+                const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
+                months.forEach(m => formattedChartData.push({ name: m, income: 0, expense: 0 }));
+            }
+
+            setTransactions(rawTransactions);
+            setStats({
+                income: totalIncome,
+                expense: totalExpense,
+                profit: totalIncome - totalExpense,
+                pending: totalPending
+            });
+            setChartData(formattedChartData);
+            setLoading(false);
+
+        }, (error) => {
+            console.error("Accounting data error:", error);
+            toast.error("Failed to load financial data");
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, []);
+
+    if (loading) {
+        return (
+            <div className="flex h-96 items-center justify-center">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-6">
             {/* Header */}
@@ -71,10 +165,10 @@ export default function AccountsPage() {
                         <p className="text-sm font-medium text-blue-600">Total Income</p>
                         <ArrowUpRight className="w-4 h-4 text-blue-600" />
                     </div>
-                    <p className="text-2xl font-bold text-gray-900">$124,592.00</p>
+                    <p className="text-2xl font-bold text-gray-900">${stats.income.toLocaleString()}</p>
                     <div className="flex items-center mt-1 text-xs text-green-600">
                         <TrendingUp className="w-3 h-3 mr-1" />
-                        +12.5% from last month
+                        Live data
                     </div>
                 </Card>
                 <Card className="p-4 bg-gradient-to-br from-pink-50 to-white border-pink-100">
@@ -82,10 +176,10 @@ export default function AccountsPage() {
                         <p className="text-sm font-medium text-pink-600">Total Expenses</p>
                         <ArrowDownLeft className="w-4 h-4 text-pink-600" />
                     </div>
-                    <p className="text-2xl font-bold text-gray-900">$45,200.00</p>
+                    <p className="text-2xl font-bold text-gray-900">${stats.expense.toLocaleString()}</p>
                     <div className="flex items-center mt-1 text-xs text-red-600">
                         <TrendingUp className="w-3 h-3 mr-1" />
-                        +4.1% from last month
+                        Live data
                     </div>
                 </Card>
                 <Card className="p-4 bg-gradient-to-br from-green-50 to-white border-green-100">
@@ -93,10 +187,11 @@ export default function AccountsPage() {
                         <p className="text-sm font-medium text-green-600">Net Profit</p>
                         <Wallet className="w-4 h-4 text-green-600" />
                     </div>
-                    <p className="text-2xl font-bold text-gray-900">$79,392.00</p>
+                    <p className={`text-2xl font-bold ${stats.profit >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
+                        ${stats.profit.toLocaleString()}
+                    </p>
                     <div className="flex items-center mt-1 text-xs text-green-600">
-                        <TrendingUp className="w-3 h-3 mr-1" />
-                        +8.2% healthy margin
+                        {stats.profit >= 0 ? 'Healthy margin' : 'Net Loss'}
                     </div>
                 </Card>
                 <Card className="p-4 bg-gradient-to-br from-purple-50 to-white border-purple-100">
@@ -104,7 +199,7 @@ export default function AccountsPage() {
                         <p className="text-sm font-medium text-purple-600">Pending</p>
                         <CreditCard className="w-4 h-4 text-purple-600" />
                     </div>
-                    <p className="text-2xl font-bold text-gray-900">$12,450.00</p>
+                    <p className="text-2xl font-bold text-gray-900">${stats.pending.toLocaleString()}</p>
                     <p className="text-xs text-gray-500 mt-1">Unpaid invoices</p>
                 </Card>
             </div>
@@ -116,7 +211,7 @@ export default function AccountsPage() {
                     <h3 className="text-lg font-bold mb-6">Cash Flow Analysis</h3>
                     <div className="h-[300px]">
                         <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={ACCOUNTS_DATA} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                            <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                                 <defs>
                                     <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="5%" stopColor="#2563eb" stopOpacity={0.1} />
@@ -141,29 +236,32 @@ export default function AccountsPage() {
                 {/* Recent Transactions List */}
                 <Card className="p-6">
                     <h3 className="text-lg font-bold mb-4">Recent Transactions</h3>
-                    <div className="space-y-4">
-                        {TRANSACTIONS.map((trx) => (
+                    <div className="space-y-4 max-h-[400px] overflow-auto pr-2">
+                        {transactions.slice(0, 10).map((trx) => (
                             <div key={trx.id} className="flex justify-between items-center pb-4 border-b last:border-0 last:pb-0">
                                 <div className="flex items-center gap-3">
-                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${trx.type === 'Credit' ? 'bg-green-100' : 'bg-red-100'
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${trx.type === 'sale' ? 'bg-green-100' : 'bg-red-100'
                                         }`}>
-                                        <DollarSign className={`w-4 h-4 ${trx.type === 'Credit' ? 'text-green-600' : 'text-red-600'
+                                        <DollarSign className={`w-4 h-4 ${trx.type === 'sale' ? 'text-green-600' : 'text-red-600'
                                             }`} />
                                     </div>
                                     <div>
-                                        <p className="text-sm font-medium">{trx.description}</p>
-                                        <p className="text-xs text-gray-500">{trx.date}</p>
+                                        <p className="text-sm font-medium truncate max-w-[150px]">{trx.description}</p>
+                                        <p className="text-xs text-gray-500">{trx.date.toLocaleDateString()}</p>
                                     </div>
                                 </div>
                                 <div className="text-right">
-                                    <p className={`text-sm font-bold ${trx.type === 'Credit' ? 'text-green-600' : 'text-gray-900'
+                                    <p className={`text-sm font-bold ${trx.type === 'sale' ? 'text-green-600' : 'text-gray-900'
                                         }`}>
-                                        {trx.type === 'Credit' ? '+' : '-'}${trx.amount.toLocaleString()}
+                                        {trx.type === 'sale' ? '+' : '-'}${trx.amount.toLocaleString()}
                                     </p>
-                                    <span className="text-[10px] text-gray-400 uppercase">{trx.status}</span>
+                                    <Badge variant="outline" className="text-[10px] uppercase">{trx.status}</Badge>
                                 </div>
                             </div>
                         ))}
+                        {transactions.length === 0 && (
+                            <p className="text-sm text-gray-500 text-center py-4">No transactions found.</p>
+                        )}
                     </div>
                 </Card>
             </div>
